@@ -3,7 +3,9 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 
+	"github.com/gofiber/fiber/v2"
 	_ "modernc.org/sqlite"
 )
 
@@ -30,7 +32,7 @@ func NewTask(id int, title string, desc string, isDone bool, category string) *t
 	return &newTask
 }
 
-func initTables(db *sql.DB) {
+func initTables() {
 	usersTable := `CREATE TABLE IF NOT EXISTS users (
 		name TEXT PRIMARY KEY,
 		password TEXT NOT NULL
@@ -52,7 +54,7 @@ func initTables(db *sql.DB) {
 	checkError(err)
 }
 
-func addUser(db *sql.DB, name, password string) {
+func addUser(name, password string) {
 	query := `INSERT INTO users (name, password) VALUES (?,?)`
 	_, err := db.Exec(query, name, password)
 	if !checkError(err) {
@@ -60,7 +62,7 @@ func addUser(db *sql.DB, name, password string) {
 		users[name] = newUser
 	}
 }
-func deleteUser(db *sql.DB, name string, users map[string]*user) {
+func deleteUser(name string) {
 	taskQuery := `DELETE FROM tasks WHERE user_name = ?`
 	_, err := db.Exec(taskQuery, name)
 	checkError(err)
@@ -70,25 +72,25 @@ func deleteUser(db *sql.DB, name string, users map[string]*user) {
 	delete(users, name)
 }
 
-func (u *user) addTask(db *sql.DB, title string, desc string, category string) {
+func (u *user) addTask(title string, desc string, category string) {
 	if category == "" {
 		category = "default"
 	}
 	query := `INSERT INTO tasks (title, desc, isDone, category, user_name) VALUES (?,?,?,?,?)`
 	_, err := db.Exec(query, title, desc, false, category, u.Name)
 	if !checkError(err) {
-		u.loadTasks(db)
+		u.loadTasks()
 	}
 }
-func (u *user) deleteTask(db *sql.DB, id int) {
+func (u *user) deleteTask(id int) {
 	u.Tasks = append(u.Tasks[:id], u.Tasks[id+1:]...)
 	query := `DELETE FROM tasks WHERE id = ?`
 	_, err := db.Exec(query, id)
 	if !checkError(err) {
-		u.loadTasks(db)
+		u.loadTasks()
 	}
 }
-func (u *user) changeTitle(db *sql.DB, id int, title string) {
+func (u *user) changeTitle(id int, title string) {
 	query := `UPDATE tasks SET title = ? WHERE id = ? AND user_name = ?`
 	_, err := db.Exec(query, title, id, u.Name)
 	if !checkError(err) {
@@ -96,7 +98,7 @@ func (u *user) changeTitle(db *sql.DB, id int, title string) {
 		task.Title = title
 	}
 }
-func (u *user) changeDesc(db *sql.DB, id int, desc string) {
+func (u *user) changeDesc(id int, desc string) {
 	query := `UPDATE tasks SET desc = ? WHERE id = ? AND user_name = ?`
 	_, err := db.Exec(query, desc, id, u.Name)
 	if !checkError(err) {
@@ -104,7 +106,7 @@ func (u *user) changeDesc(db *sql.DB, id int, desc string) {
 		task.Desc = desc
 	}
 }
-func (u *user) changeIsDone(db *sql.DB, id int, isDone bool) {
+func (u *user) changeIsDone(id int, isDone bool) {
 	query := `UPDATE tasks SET isDone = ? WHERE id = ? AND user_name = ?`
 	_, err := db.Exec(query, isDone, id, u.Name)
 	if !checkError(err) {
@@ -112,7 +114,7 @@ func (u *user) changeIsDone(db *sql.DB, id int, isDone bool) {
 		task.IsDone = isDone
 	}
 }
-func (u *user) changeCategory(db *sql.DB, id int, category string) {
+func (u *user) changeCategory(id int, category string) {
 	query := `UPDATE tasks SET category = ? WHERE id = ? AND user_name = ?`
 	_, err := db.Exec(query, category, id, u.Name)
 	if !checkError(err) {
@@ -121,7 +123,7 @@ func (u *user) changeCategory(db *sql.DB, id int, category string) {
 	}
 }
 
-func loadUsers(db *sql.DB) {
+func loadUsers() {
 	userQuery := `SELECT name, password FROM users;`
 	usersRows, err := db.Query(userQuery)
 	checkError(err)
@@ -131,11 +133,11 @@ func loadUsers(db *sql.DB) {
 		err := usersRows.Scan(&name, &password)
 		checkError(err)
 		users[name] = NewUser(name, password, tasks)
-		users[name].loadTasks(db)
+		users[name].loadTasks()
 	}
 	defer usersRows.Close()
 }
-func (u *user) loadTasks(db *sql.DB) {
+func (u *user) loadTasks() {
 	query := `SELECT id, title, desc, isDone, category FROM tasks WHERE user_name = ?`
 	rows, err := db.Query(query, u.Name)
 	checkError(err)
@@ -169,26 +171,148 @@ func findTaskById(tasks *[]task, id int) *task {
 	return &task{}
 }
 
-/*
-	 func RegisterUser(c *fiber.Ctx) error {
-		name := c.Params("name")
-		password := c.Params("password")
-		newUser = NewUser(name, password)
+func RegisterUser(c *fiber.Ctx) error {
+	name := c.Params("name")
+	password := c.Params("password")
+	if name != "" && password != "" {
+		addUser(name, password)
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Name und Passwort dürfen nicht leer sein!"})
 	}
-*/
+	return c.Status(201).JSON("Benutzer erfolgreich hinzugefügt")
+}
+func DeleteUser(c *fiber.Ctx) error {
+	name := c.Params("name")
+	if name != "" {
+		deleteUser(name)
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Benutzer konnte nicht gelöscht werden"})
+	}
+	return c.Status(200).JSON("Benutzer erfolgreich gelöscht")
+}
+
+func AddTask(c *fiber.Ctx) error {
+	title := c.Params("title")
+	desc := c.Params("desc")
+	category := c.Params("category")
+	user := c.Params("user_name")
+	if title != "" && user != "" {
+		users[user].addTask(title, desc, category)
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Titel und Benutzer dürfen nicht leer sein!"})
+	}
+	return c.Status(201).JSON("Aufgabe erfolgreich erstellt")
+}
+func DeleteTask(c *fiber.Ctx) error {
+	id := c.Params("id")
+	user := c.Params("user_name")
+	if id != "" && user != "" {
+		i, err := strconv.Atoi(id)
+		if !checkError(err) {
+			users[user].deleteTask(i)
+		}
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "ID und Benutzer dürfen nicht leer sein!"})
+	}
+	return c.Status(200).JSON("Aufgabe erfolgreich gelöscht")
+}
+func ChangeTitle(c *fiber.Ctx) error {
+	id := c.Params("id")
+	title := c.Params("title")
+	user := c.Params("user_name")
+	if id != "" && title != "" && user != "" {
+		i, err := strconv.Atoi(id)
+		if !checkError(err) {
+			users[user].changeTitle(i, title)
+		}
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "ID, Titel und Benutzer dürfen nicht leer sein!"})
+	}
+	return c.Status(200).JSON("Titel erfolgreich geändert")
+}
+func ChangeDesc(c *fiber.Ctx) error {
+	id := c.Params("id")
+	desc := c.Params("desc")
+	user := c.Params("user_name")
+	if id != "" && user != "" {
+		i, err := strconv.Atoi(id)
+		if !checkError(err) {
+			users[user].changeDesc(i, desc)
+		}
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "ID und Benutzer dürfen nicht leer sein!"})
+	}
+	return c.Status(200).JSON("Beschreibung erfolgreich geändert")
+}
+func ChangeIsDone(c *fiber.Ctx) error {
+	id := c.Params("id")
+	isDone := c.Params("isDone")
+	user := c.Params("user_name")
+	if id != "" && user != "" {
+		i, err := strconv.Atoi(id)
+		if !checkError(err) {
+			done, err := strconv.ParseBool(isDone)
+			if !checkError(err) {
+				users[user].changeIsDone(i, done)
+			}
+		}
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "ID und Benutzer dürfen nicht leer sein!"})
+	}
+	return c.Status(200).JSON("Aufgabenstatus erfolgreich geändert")
+}
+func ChangeCategory(c *fiber.Ctx) error {
+	id := c.Params("id")
+	category := c.Params("category")
+	user := c.Params("user_name")
+	if id != "" && user != "" {
+		i, err := strconv.Atoi(id)
+		if !checkError(err) {
+			users[user].changeCategory(i, category)
+		}
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "ID und Benutzer dürfen nicht leer sein!"})
+	}
+	return c.Status(200).JSON("Aufgabenstatus erfolgreich geändert")
+}
+
+func GetTasks(c *fiber.Ctx) error {
+	name := c.Params("name")
+	if name != "" {
+		return c.JSON(users[name].Tasks)
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Name darf nicht leer sein!"})
+	}
+}
+
+func LogInUser(c *fiber.Ctx) error {
+	name := c.Params("name")
+	password := c.Params("password")
+	if name != "" && password != "" {
+		return c.JSON(users[name].Tasks)
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Name darf nicht leer sein!"})
+	}
+}
 
 var users map[string]*user
+var db *sql.DB
 
 func main() {
 	users = make(map[string]*user)
+
 	dbPath := "./go-todo.db"
 	db, err := sql.Open("sqlite", dbPath)
 	checkError(err)
-	initTables(db)
-	loadUsers(db)
-	addUser(db, "Niklas", "12332")
-	users["Niklas"].addTask(db, "Hallo", "i bims", "")
-	users["Niklas"].changeIsDone(db, 1, true)
+	initTables()
+	loadUsers()
+
+	app := fiber.New()
+	app.Listen(":5000")
+
+	addUser("Niklas", "12332")
+	users["Niklas"].addTask("Hallo", "i bims", "")
+	users["Niklas"].changeIsDone(1, true)
 	fmt.Println(*users["Niklas"])
 	defer db.Close()
 
