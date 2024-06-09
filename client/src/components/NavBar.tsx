@@ -5,9 +5,6 @@ import { BASE_URL } from "../App";
 
 export default function NavBar(props: any) {
   const [showPopup, setShowPopup] = useState(0);
-  function togglePopup(popupId: number) {
-    setShowPopup(popupId);
-  }
   const handleLogout = async () => {
     const token = sessionStorage.getItem("token");
     if (token) {
@@ -39,12 +36,12 @@ export default function NavBar(props: any) {
       </h1>
       <div>
         {props.user.name === "" && (
-          <Button variant="contained" onClick={() => togglePopup(1)}>
+          <Button variant="contained" onClick={() => setShowPopup(1)}>
             Registrieren
           </Button>
         )}
         {props.user.name === "" && (
-          <Button variant="contained" onClick={() => togglePopup(2)}>
+          <Button variant="contained" onClick={() => setShowPopup(2)}>
             Login
           </Button>
         )}
@@ -56,7 +53,7 @@ export default function NavBar(props: any) {
       </div>
       <PopupForm
         showPopup={showPopup}
-        togglePopup={togglePopup}
+        setShowPopup={setShowPopup}
         setUser={props.setUser}
       />
     </header>

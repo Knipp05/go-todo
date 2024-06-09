@@ -152,7 +152,7 @@ func loginUser(inputName, inputPassword string) (token string, name string, task
 		}
 	}
 
-	return "", "", nil, errors.New("Anmeldung nicht erfolgreich")
+	return "", "", nil, errors.New("Die Anmeldedaten sind nicht korrekt")
 }
 
 func addTask(name string, title string, desc string, category string) *task {
@@ -237,7 +237,7 @@ func RegisterUser(c *fiber.Ctx) error {
 	if creds.Name != "" && creds.Password != "" {
 		err := addUser(creds.Name, creds.Password)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": err})
+			return c.Status(400).JSON(fiber.Map{"error": "Dieser Benutzer existiert bereits"})
 		}
 	} else {
 		return c.Status(400).JSON(fiber.Map{"error": "Benutzername und Passwort dürfen nicht leer sein"})

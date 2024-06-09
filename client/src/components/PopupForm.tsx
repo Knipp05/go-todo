@@ -56,7 +56,7 @@ export default function PopupForm(props: any) {
         setUserCredentials({ name: "", password: "" });
         setRepeatedPassword("");
         setErrorMessage("");
-        props.togglePopup(0);
+        props.setShowPopup(0);
       } catch (error: any) {
         setErrorMessage(error.message);
       }
@@ -82,7 +82,7 @@ export default function PopupForm(props: any) {
         setErrorMessage("");
         sessionStorage.setItem("token", data.token);
         props.setUser({ name: data.name, tasks: data.tasks });
-        props.togglePopup(0);
+        props.setShowPopup(0);
       } catch (error: any) {
         setErrorMessage(error.message);
       }
@@ -91,7 +91,10 @@ export default function PopupForm(props: any) {
   return (
     <Dialog
       open={props.showPopup > 0 ? true : false}
-      onClose={() => props.togglePopup(0)}
+      onClose={() => {
+        setErrorMessage("");
+        props.setShowPopup(0);
+      }}
       PaperProps={{
         component: "form",
         onSubmit: (event: React.FormEvent<HTMLFormElement>) =>
@@ -133,7 +136,11 @@ export default function PopupForm(props: any) {
             onChange={handleInput}
           />
         )}
-        {errorMessage && <DialogContentText>{errorMessage}</DialogContentText>}
+        {errorMessage && (
+          <DialogContentText sx={{ color: "red" }}>
+            {errorMessage}
+          </DialogContentText>
+        )}
         <DialogActions>
           <Button type="submit">
             {props.showPopup === 1 ? "registrieren" : "anmelden"}

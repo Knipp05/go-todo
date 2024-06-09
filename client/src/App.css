@@ -30,13 +30,10 @@
   text-decoration: line-through;
   transition: .3s ease-in;
 }
-.todo--done h3 {
+.todo--done .todo--title {
   background-color: rgb(0, 164, 0);
   text-decoration: line-through;
   transition: .3s ease-in;
-}
-.todo--button {
-  margin-top: 1%;
 }
 .todo--title {
   width: 100%;
@@ -67,4 +64,7 @@
   width: 5%;
   padding: 0;
   margin: 0;
+}
+.popup--error {
+  color: red;
 }
