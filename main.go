@@ -3,13 +3,15 @@ package main
 import (
 	"database/sql"
 	"errors"
-	"fmt"
+	"log"
 	"strconv"
+	"time"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type task struct {
@@ -24,6 +26,52 @@ type user struct {
 	Name     string `json:"name"`
 	Password string `json:"password"`
 	Tasks    []task `json:"tasks"`
+}
+
+var jwtSecret = []byte("3F6C8DC3EEBB3987C95E87E15D629") // Key generieren und der Einfachheit halber hier fest codieren
+
+func generateJWT(username string) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"name": username,
+		"exp":  time.Now().Add(time.Hour * 1).Unix(),
+	})
+
+	tokenString, err := token.SignedString(jwtSecret)
+	if err != nil {
+		return "", err
+	}
+	return tokenString, nil
+}
+
+func parseJWT(tokenString string) (*jwt.Token, error) {
+	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return token, nil
+}
+
+func jwtMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		tokenString := c.Get("Authorization")
+		if tokenString == "" {
+			return c.Status(401).JSON(fiber.Map{"error": "Kein Token bereitgestellt"})
+		}
+
+		token, err := parseJWT(tokenString)
+		if err != nil || !token.Valid {
+			return c.Status(401).JSON(fiber.Map{"error": "Ungültiges Token"})
+		}
+
+		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+			c.Locals("name", claims["name"])
+		} else {
+			return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"})
+		}
+		return c.Next()
+	}
 }
 
 func NewUser(name, password string, tasks []task) *user {
@@ -52,20 +100,22 @@ func initTables() {
     );`
 
 	_, err := db.Exec(usersTable)
-	checkError(err)
+	if err != nil {
+		log.Fatal("Fehler beim Erstellen der User Tabelle")
+	}
 	_, err = db.Exec(tasksTable)
-	checkError(err)
+	if err != nil {
+		log.Fatal("Fehler beim Erstellen der Task Tabelle")
+	}
 }
 
-func addUser(name, password string) {
+func addUser(name, password string) error {
 	query := `INSERT INTO users (name, password) VALUES (?,?)`
 	_, err := db.Exec(query, name, password)
-	if !checkError(err) {
-		newUser := NewUser(name, password, make([]task, 0))
-		activeUsers[name] = newUser
-		fmt.Printf("User erstellt: ", name)
-		loadUsers()
+	if err != nil {
+		return errors.New("Benutzer existiert bereits")
 	}
+	return nil
 }
 
 /* func deleteUser(name string) {
@@ -78,130 +128,99 @@ func addUser(name, password string) {
 	delete(users, name)
 } */
 
-func loginUser(inputName, inputPassword string) error {
-	foundUser := NewUser(inputName, inputPassword, make([]task, 0))
+func loginUser(inputName, inputPassword string) (token string, name string, tasks []task, err error) {
 	query := `SELECT name, password FROM users WHERE name=?`
 	user, err := db.Query(query, inputName)
-	if err == nil {
-		_, alreadyLoggedIn := activeUsers[inputName]
-		if !alreadyLoggedIn {
-			for user.Next() {
-				var name, password string
-				err = user.Scan(&name, &password)
-				if err == nil && password == inputPassword {
-					foundUser.loadTasks()
-					activeUsers[inputName] = foundUser
-					fmt.Printf("User angemeldet: ", inputName)
-					return nil
-				}
-			}
-
-		}
-		return errors.New("Dieser Benutzer ist bereits eingeloggt")
-
+	if err != nil {
+		return "", "", nil, err
 	}
 	defer user.Close()
-	return errors.New("Anmeldedaten sind nicht korrekt")
+
+	for user.Next() {
+		var name, password string
+		err = user.Scan(&name, &password)
+		if err == nil && password == inputPassword {
+			token, err := generateJWT(name)
+			if err != nil {
+				return "", "", nil, err
+			}
+			tasks, err := loadTasks(name)
+			if err != nil {
+				return "", "", nil, err
+			}
+			return token, name, tasks, nil
+		}
+	}
+
+	return "", "", nil, errors.New("Anmeldung nicht erfolgreich")
 }
 
-func (u *user) addTask(title string, desc string, category string) {
+func addTask(name string, title string, desc string, category string) *task {
 	if category == "" {
 		category = "default"
 	}
 	query := `INSERT INTO tasks (title, desc, isDone, category, user_name) VALUES (?,?,?,?,?)`
-	_, err := db.Exec(query, title, desc, false, category, u.Name)
-	if !checkError(err) {
-		u.loadTasks()
+	newTask, err := db.Exec(query, title, desc, false, category, name)
+	if err != nil {
+		return nil
 	}
+	addedTaskId, _ := newTask.LastInsertId()
+	addedTask := NewTask(int(addedTaskId), title, desc, false, category)
+
+	return addedTask
 }
-func (u *user) deleteTask(id int) {
-	u.Tasks = append(u.Tasks[:id], u.Tasks[id+1:]...)
-	query := `DELETE FROM tasks WHERE id = ?`
-	_, err := db.Exec(query, id)
-	if !checkError(err) {
-		u.loadTasks()
+func deleteTask(name string, id int) error {
+	query := `DELETE FROM tasks WHERE id = ? AND user_name = ?`
+	_, err := db.Exec(query, id, name)
+	if err != nil {
+		return err
 	}
+	return nil
 }
-func (u *user) changeTitle(id int, title string) {
-	query := `UPDATE tasks SET title = ? WHERE id = ? AND user_name = ?`
-	_, err := db.Exec(query, title, id, u.Name)
-	if !checkError(err) {
-		task := findTaskById(&u.Tasks, id)
-		task.Title = title
+func changeContent(name string, id int, title string, desc string) error {
+	query := `UPDATE tasks SET title = ?, desc = ? WHERE id = ? AND user_name = ?`
+	_, err := db.Exec(query, title, desc, id, name)
+	if err != nil {
+		return err
 	}
+	return nil
 }
-func (u *user) changeDesc(id int, desc string) {
-	query := `UPDATE tasks SET desc = ? WHERE id = ? AND user_name = ?`
-	_, err := db.Exec(query, desc, id, u.Name)
-	if !checkError(err) {
-		task := findTaskById(&u.Tasks, id)
-		task.Desc = desc
-	}
-}
-func (u *user) changeIsDone(id int, isDone bool) {
+func changeIsDone(name string, id int, isDone bool) error {
 	query := `UPDATE tasks SET isDone = ? WHERE id = ? AND user_name = ?`
-	_, err := db.Exec(query, isDone, id, u.Name)
-	if !checkError(err) {
-		task := findTaskById(&u.Tasks, id)
-		task.IsDone = isDone
+	_, err := db.Exec(query, isDone, id, name)
+	if err != nil {
+		return err
 	}
+	return nil
 }
-func (u *user) changeCategory(id int, category string) {
+func changeCategory(name string, id int, category string) error {
 	query := `UPDATE tasks SET category = ? WHERE id = ? AND user_name = ?`
-	_, err := db.Exec(query, category, id, u.Name)
-	if !checkError(err) {
-		task := findTaskById(&u.Tasks, id)
-		task.Category = category
+	_, err := db.Exec(query, category, id, name)
+	if err != nil {
+		return err
 	}
+	return nil
 }
 
-func loadUsers() {
-	test := make([]user, 0)
-	userQuery := `SELECT name, password FROM users;`
-	usersRows, err := db.Query(userQuery)
-	checkError(err)
-	for usersRows.Next() {
-		var name, password string
-		var tasks []task
-		err := usersRows.Scan(&name, &password)
-		checkError(err)
-		test = append(test, *NewUser(name, password, tasks))
-		fmt.Println(test)
-	}
-	defer usersRows.Close()
-}
-func (u *user) loadTasks() {
+func loadTasks(name string) ([]task, error) {
 	query := `SELECT id, title, desc, isDone, category FROM tasks WHERE user_name = ?`
-	rows, err := db.Query(query, u.Name)
-	checkError(err)
+	rows, err := db.Query(query, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 	loadedTasks := make([]task, 0)
 	for rows.Next() {
 		var id int
 		var title, desc, category string
 		var isDone bool
 		err := rows.Scan(&id, &title, &desc, &isDone, &category)
-		checkError(err)
+		if err != nil {
+			return nil, err
+		}
 		loadedTasks = append(loadedTasks, *NewTask(id, title, desc, isDone, category))
 	}
-	u.Tasks = loadedTasks
-	defer rows.Close()
-}
-
-func checkError(err error) bool {
-	if err != nil {
-		fmt.Println(err)
-		return true
-	}
-	return false
-}
-
-func findTaskById(tasks *[]task, id int) *task {
-	for index := range *tasks {
-		if (*tasks)[index].ID == id {
-			return &(*tasks)[index]
-		}
-	}
-	return &task{}
+	return loadedTasks, nil
 }
 
 func RegisterUser(c *fiber.Ctx) error {
@@ -216,9 +235,12 @@ func RegisterUser(c *fiber.Ctx) error {
 	}
 
 	if creds.Name != "" && creds.Password != "" {
-		addUser(creds.Name, creds.Password)
+		err := addUser(creds.Name, creds.Password)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err})
+		}
 	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "Benutzername und Passwort dürfen nicht leer sein!"})
+		return c.Status(400).JSON(fiber.Map{"error": "Benutzername und Passwort dürfen nicht leer sein"})
 	}
 	return c.Status(201).JSON("Benutzer erfolgreich hinzugefügt")
 }
@@ -235,141 +257,173 @@ func LogInUser(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 	}
 	if creds.Name != "" && creds.Password != "" {
-		err = loginUser(creds.Name, creds.Password)
+		token, name, tasks, err := loginUser(creds.Name, creds.Password)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.Status(200).JSON(fiber.Map{"token": token, "name": name, "tasks": tasks})
 	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "Benutzername und Passwort dürfen nicht leer sein!"})
+		return c.Status(400).JSON(fiber.Map{"error": "Benutzername und Passwort dürfen nicht leer sein"})
 	}
-	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err})
-	} else {
-		return c.Status(201).JSON(activeUsers[creds.Name])
-	}
-
 }
+
 func LogOutUser(c *fiber.Ctx) error {
-	var err error
-	var name string
-	if err = c.BodyParser(&name); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Logout fehlgeschlagen"})
-	}
-	delete(activeUsers, name)
-	fmt.Println("User abgemeldet: ", name)
 	return c.Status(200).JSON(fiber.Map{"msg": "Logout erfolgreich"})
 }
 
 func AddTask(c *fiber.Ctx) error {
-	title := c.Params("title")
-	desc := c.Params("desc")
-	category := c.Params("category")
-	user := c.Params("user_name")
-	if title != "" && user != "" {
-		activeUsers[user].addTask(title, desc, category)
-	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "Titel und Benutzer dürfen nicht leer sein!"})
+	name := c.Locals("name").(string)
+	type TaskInput struct {
+		Title    string `json:"title"`
+		Desc     string `json:"desc"`
+		Category string `json:"category"`
 	}
-	return c.Status(201).JSON("Aufgabe erfolgreich erstellt")
+
+	var input TaskInput
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+	}
+
+	if input.Title != "" {
+		addedTask := addTask(name, input.Title, input.Desc, input.Category)
+		if addedTask == nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Aufgabe konnte nicht erstellt werden"})
+		}
+		return c.Status(201).JSON(fiber.Map{"id": addedTask.ID, "title": addedTask.Title, "desc": addedTask.Desc, "isDone": addedTask.IsDone, "category": addedTask.Category})
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Titel darf nicht leer sein"})
+	}
 }
 func DeleteTask(c *fiber.Ctx) error {
 	id := c.Params("id")
-	user := c.Params("user_name")
-	if id != "" && user != "" {
+	name := c.Locals("name").(string)
+	if id != "" {
 		i, err := strconv.Atoi(id)
-		if !checkError(err) {
-			activeUsers[user].deleteTask(i)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Fehler beim Löschen aufgetreten"})
 		}
+		deleteTask(name, i)
+		return c.Status(200).JSON(fiber.Map{"msg": "Aufgabe erfolgreich gelöscht"})
 	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "ID und Benutzer dürfen nicht leer sein!"})
+		return c.Status(400).JSON(fiber.Map{"error": "Fehler beim Löschen aufgetreten"})
 	}
-	return c.Status(200).JSON("Aufgabe erfolgreich gelöscht")
 }
-func ChangeTitle(c *fiber.Ctx) error {
+func ChangeContent(c *fiber.Ctx) error {
+	name := c.Locals("name").(string)
 	id := c.Params("id")
-	title := c.Params("title")
-	user := c.Params("user_name")
-	if id != "" && title != "" && user != "" {
-		i, err := strconv.Atoi(id)
-		if !checkError(err) {
-			activeUsers[user].changeTitle(i, title)
-		}
-	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "ID, Titel und Benutzer dürfen nicht leer sein!"})
+	type TaskInput struct {
+		Title string `json:"title"`
+		Desc  string `json:"desc"`
 	}
-	return c.Status(200).JSON("Titel erfolgreich geändert")
-}
-func ChangeDesc(c *fiber.Ctx) error {
-	id := c.Params("id")
-	desc := c.Params("desc")
-	user := c.Params("user_name")
-	if id != "" && user != "" {
-		i, err := strconv.Atoi(id)
-		if !checkError(err) {
-			activeUsers[user].changeDesc(i, desc)
-		}
-	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "ID und Benutzer dürfen nicht leer sein!"})
+	var input TaskInput
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 	}
-	return c.Status(200).JSON("Beschreibung erfolgreich geändert")
+	if id != "" && input.Title != "" {
+		i, err := strconv.Atoi(id)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+		}
+		err = changeContent(name, i, input.Title, input.Desc)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Titel konnte nicht geändert werden"})
+		}
+		return c.Status(200).JSON(fiber.Map{"msg": "Titel erfolgreich geändert"})
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Titel darf nicht leer sein"})
+	}
 }
+
 func ChangeIsDone(c *fiber.Ctx) error {
+	name := c.Locals("name").(string)
 	id := c.Params("id")
 	isDone := c.Params("isDone")
-	user := c.Params("user_name")
-	if id != "" && user != "" {
+	if id != "" && isDone != "" {
 		i, err := strconv.Atoi(id)
-		if !checkError(err) {
-			done, err := strconv.ParseBool(isDone)
-			if !checkError(err) {
-				activeUsers[user].changeIsDone(i, done)
-			}
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 		}
+		d, err := strconv.ParseBool(isDone)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+		}
+		err = changeIsDone(name, i, !d)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Status konnte nicht geändert werden"})
+		}
+		return c.Status(200).JSON(fiber.Map{"msg": "Status erfolgreich geändert"})
 	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "ID und Benutzer dürfen nicht leer sein!"})
+		return c.Status(400).JSON(fiber.Map{"error": "Status darf nicht leer sein"})
 	}
-	return c.Status(200).JSON("Aufgabenstatus erfolgreich geändert")
 }
 func ChangeCategory(c *fiber.Ctx) error {
-	id := c.Params("id")
-	category := c.Params("category")
-	user := c.Params("user_name")
-	if id != "" && user != "" {
-		i, err := strconv.Atoi(id)
-		if !checkError(err) {
-			activeUsers[user].changeCategory(i, category)
+	name := c.Locals("name").(string)
+	type TaskInput struct {
+		ID       string `json:"id"`
+		Category string `json:"category"`
+	}
+	var input TaskInput
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+	}
+	if input.ID != "" {
+		i, err := strconv.Atoi(input.ID)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 		}
+		err = changeCategory(name, i, input.Category)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Kategorie konnte nicht geändert werden"})
+		}
+		return c.Status(200).JSON(fiber.Map{"msg": "Kategorie erfolgreich geändert"})
 	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "ID und Benutzer dürfen nicht leer sein!"})
-	}
-	return c.Status(200).JSON("Aufgabenstatus erfolgreich geändert")
-}
-
-func GetTasks(c *fiber.Ctx) error {
-	name := c.Params("name")
-	if name != "" {
-		return c.JSON(activeUsers[name].Tasks)
-	} else {
-		return c.Status(400).JSON(fiber.Map{"error": "Name darf nicht leer sein!"})
+		return c.Status(400).JSON(fiber.Map{"error": "Kategorie konnte nicht geändert werden"})
 	}
 }
 
-var activeUsers map[string]*user
+/* func logQuery(query string, args ...interface{}) {
+	log.Printf("Executing query: %s with args: %v\n", query, args)
+}
+
+func logDBStats() {
+	stats := db.Stats()
+	log.Printf("Open connections: %d, In use: %d, Idle: %d\n", stats.OpenConnections, stats.InUse, stats.Idle)
+} */
+
 var db *sql.DB
 
 func main() {
 	var err error
-	activeUsers = make(map[string]*user)
 
 	db, err = sql.Open("sqlite", "go-todo.db")
-	checkError(err)
+	if err != nil {
+		log.Fatal("Fehler beim Erstellen/Öffnen der Datenbank")
+	}
+
 	initTables()
+
+	/* go func() {
+		for {
+			logDBStats()
+			time.Sleep(10 * time.Second)
+		}
+	}() */
 
 	app := fiber.New()
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "http://localhost:5173",
-		AllowHeaders: "Origin,Content-Type,Accept",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
 	app.Post("/api/users/new", RegisterUser)
 	app.Post("/api/users", LogInUser)
-	app.Post("/api/users/logout", LogOutUser)
+
+	app.Use(jwtMiddleware())
+
+	app.Delete("/api/users/logout", LogOutUser)
+	app.Delete("/api/tasks/:id", DeleteTask)
+	app.Patch("/api/tasks/:id/isdone/:isDone", ChangeIsDone)
+	app.Patch("/api/tasks/:id/content", ChangeContent)
+	app.Post("/api/tasks", AddTask)
 	app.Listen(":5000")
 	defer db.Close()
 }

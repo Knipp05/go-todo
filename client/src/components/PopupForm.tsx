@@ -80,7 +80,8 @@ export default function PopupForm(props: any) {
         setUserCredentials({ name: "", password: "" });
         setRepeatedPassword("");
         setErrorMessage("");
-        props.setUser(data);
+        sessionStorage.setItem("token", data.token);
+        props.setUser({ name: data.name, tasks: data.tasks });
         props.togglePopup(0);
       } catch (error: any) {
         setErrorMessage(error.message);

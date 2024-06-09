@@ -9,23 +9,27 @@ export default function NavBar(props: any) {
     setShowPopup(popupId);
   }
   const handleLogout = async () => {
-    try {
-      const res = await fetch(BASE_URL + `/users/logout`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(props.user.name),
-      });
+    const token = sessionStorage.getItem("token");
+    if (token) {
+      try {
+        const res = await fetch(BASE_URL + `/users/logout`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token,
+          },
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+        if (!res.ok) {
+          throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+        }
+        props.setUser({ name: "", password: "", tasks: [] });
+        sessionStorage.removeItem("token");
+      } catch (error: any) {
+        throw new Error("Logout nicht erfolgreich");
       }
-      props.setUser({ name: "", password: "", tasks: [] });
-    } catch (error: any) {
-      throw new Error("Logout nicht erfolgreich");
     }
   };
   return (

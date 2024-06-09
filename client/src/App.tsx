@@ -12,20 +12,21 @@ export type Task = {
 };
 export type User = {
   name: string;
-  password: string;
   tasks: Task[];
 };
 export const BASE_URL = "http://localhost:5000/api";
 function App() {
-  const [currentUser, setCurrentUser] = useState<User>({
+  const [user, setUser] = useState<User>({
     name: "",
-    password: "",
     tasks: [],
   });
   return (
     <div>
-      <NavBar user={currentUser} setUser={setCurrentUser} />
-      <Planer user={currentUser} setUser={setCurrentUser} />
+      <NavBar user={user} setUser={setUser} />
+      {user.name !== "" && <Planer user={user} setUser={setUser} />}
+      {user.name === "" && (
+        <h1>Melde dich an, um deine Aufgaben zu sehen und zu verwalten</h1>
+      )}
     </div>
   );
 }
