@@ -9,7 +9,13 @@ import "../App.css";
 export default function Planer(props: any) {
   const [showForm, setShowForm] = useState(false);
   const todoElements = props.user.tasks.map((task: Task, idx: number) => (
-    <ToDo key={idx} data={task} setUser={props.setUser} />
+    <ToDo
+      key={idx}
+      data={task}
+      user={props.user}
+      setUser={props.setUser}
+      categories={props.user.categories}
+    />
   ));
   return (
     <div>
@@ -24,6 +30,8 @@ export default function Planer(props: any) {
         open={showForm}
         setShowForm={setShowForm}
         setUser={props.setUser}
+        user={props.user}
+        categories={props.user.categories}
         type="create"
       />
       {todoElements}

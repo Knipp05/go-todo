@@ -71,9 +71,20 @@ export default function ToDo(props: any) {
     }
   };
   return (
-    <div className={props.data.isDone ? "todo todo--done" : "todo"}>
-      <div className="todo--title">
-        <h3>{props.data.title}</h3>
+    <div
+      className={props.data.isDone ? "todo todo--done" : "todo"}
+      style={{ backgroundColor: props.data.category.color_body }}
+    >
+      <div
+        className="todo--title"
+        style={{ backgroundColor: props.data.category.color_header }}
+      >
+        <h2>{props.data.title}</h2>
+        <h3>
+          {props.data.category.cat_name === "default"
+            ? "nicht kategorisiert"
+            : props.data.category.cat_name}
+        </h3>
         <Button onClick={() => setShowForm(true)}>
           <EditIcon />
         </Button>
@@ -92,6 +103,8 @@ export default function ToDo(props: any) {
         setShowForm={setShowForm}
         setUser={props.setUser}
         data={props.data}
+        user={props.user}
+        categories={props.categories}
         type="edit"
       />
     </div>

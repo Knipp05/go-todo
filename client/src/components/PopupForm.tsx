@@ -81,7 +81,11 @@ export default function PopupForm(props: any) {
         setRepeatedPassword("");
         setErrorMessage("");
         sessionStorage.setItem("token", data.token);
-        props.setUser({ name: data.name, tasks: data.tasks });
+        props.setUser({
+          name: data.name,
+          tasks: data.tasks,
+          categories: data.categories,
+        });
         props.setShowPopup(0);
       } catch (error: any) {
         setErrorMessage(error.message);

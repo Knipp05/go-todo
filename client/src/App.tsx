@@ -8,17 +8,24 @@ export type Task = {
   title: string;
   desc: string;
   isDone: boolean;
-  category: string;
+  category: Category;
 };
 export type User = {
   name: string;
   tasks: Task[];
+  categories: Category[];
+};
+export type Category = {
+  cat_name: string;
+  color_header: string;
+  color_body: string;
 };
 export const BASE_URL = "http://localhost:5000/api";
 function App() {
   const [user, setUser] = useState<User>({
     name: "",
     tasks: [],
+    categories: [],
   });
   return (
     <div>

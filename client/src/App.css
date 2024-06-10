@@ -20,7 +20,7 @@
   display: flex;
   flex-wrap: wrap;
   border-radius: 20px;
-  background-color: rgb(0, 206, 234);
+/*   background-color: rgb(0, 206, 234); */
   margin: 2% 0 2% 0;
   overflow: hidden;
   transition: .3s ease-in;
@@ -40,12 +40,15 @@
   display: flex;
   flex-wrap: wrap;
   padding: 0 0 0 1%;
-  background-color: rgb(0, 164, 186);
+/*   background-color: rgb(0, 164, 186); */
   transition: .3s ease-in;
   margin: 0;
 }
+.todo--title h2 {
+  width: 80%;
+}
 .todo--title h3 {
-  width: 95%;
+  width: 15%;
 }
 .todo--title Button {
   width: 5%;

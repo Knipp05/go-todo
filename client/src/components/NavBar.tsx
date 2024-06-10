@@ -22,7 +22,7 @@ export default function NavBar(props: any) {
         if (!res.ok) {
           throw new Error(data.error || "Unbekannter Fehler aufgetreten");
         }
-        props.setUser({ name: "", password: "", tasks: [] });
+        props.setUser({ name: "", password: "", tasks: [], categories: [] });
         sessionStorage.removeItem("token");
       } catch (error: any) {
         throw new Error("Logout nicht erfolgreich");
