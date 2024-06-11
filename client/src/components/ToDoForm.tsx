@@ -8,28 +8,43 @@ import {
   TextField,
   Grid,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BASE_URL, Task, User } from "../App";
 import CategoryMenu from "./CategoryMenu";
 
 export default function ToDoForm(props: any) {
-  const [taskContent, setTaskContent] = useState(
-    props.type === "create"
-      ? {
-          title: "",
-          desc: "",
-          category: {
-            cat_name: "default",
-            color_header: "#00a4ba",
-            color_body: "#00ceea",
-          },
-        }
-      : {
-          title: props.data.title,
-          desc: props.data.desc,
-          category: props.data.category,
-        }
-  );
+  const [taskContent, setTaskContent] = useState({
+    title: "",
+    desc: "",
+    category: {
+      id: 1,
+      cat_name: "default",
+      color_header: "#00a4ba",
+      color_body: "#00ceea",
+    },
+  });
+
+  useEffect(() => {
+    if (props.type === "edit" && props.data) {
+      setTaskContent({
+        title: props.data.title,
+        desc: props.data.desc,
+        category: props.data.category,
+      });
+    } else if (props.type === "create") {
+      setTaskContent({
+        title: "",
+        desc: "",
+        category: {
+          id: 1,
+          cat_name: "default",
+          color_header: "#00a4ba",
+          color_body: "#00ceea",
+        },
+      });
+    }
+  }, [props.data, props.type]);
+
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
 
@@ -37,11 +52,34 @@ export default function ToDoForm(props: any) {
     setAnchorEl(event.currentTarget);
   };
 
-  const handleClose = () => {
+  const handleDropDownClose = () => {
     setAnchorEl(null);
   };
 
+  function handleClose() {
+    props.setShowForm(false);
+    if (props.type === "edit" && props.data) {
+      setTaskContent({
+        title: props.data.title,
+        desc: props.data.desc,
+        category: props.data.category,
+      });
+    } else if (props.type === "create") {
+      setTaskContent({
+        title: "",
+        desc: "",
+        category: {
+          id: 1,
+          cat_name: "default",
+          color_header: "#00a4ba",
+          color_body: "#00ceea",
+        },
+      });
+    }
+  }
+
   function changeCategory(
+    id: number,
     cat_name: string,
     color_header: string,
     color_body: string
@@ -50,6 +88,7 @@ export default function ToDoForm(props: any) {
       return {
         ...oldContent,
         category: {
+          id: id,
           cat_name: cat_name,
           color_header: color_header,
           color_body: color_body,
@@ -68,7 +107,9 @@ export default function ToDoForm(props: any) {
     event.preventDefault();
     const token = sessionStorage.getItem("token");
     const target =
-      props.type === "create" ? "/tasks" : `/tasks/${props.data.id}/content`;
+      props.type === "create"
+        ? `/${props.user.id}/tasks`
+        : `/${props.user.name}/tasks/${props.data.id}`;
     const method = props.type === "create" ? "POST" : "PATCH";
     if (token && taskContent.title !== "") {
       try {
@@ -87,15 +128,15 @@ export default function ToDoForm(props: any) {
           throw new Error(data.error || "Unbekannter Fehler aufgetreten");
         }
         if (props.type === "create") {
-          props.setUser((oldUser: any) => {
+          props.setUser((oldUser: User) => {
             var newTasks = [
               ...oldUser.tasks,
               {
                 id: data.id,
-                title: data.title,
-                desc: data.desc,
-                isDone: data.isDone,
-                category: data.category,
+                title: taskContent.title,
+                desc: taskContent.desc,
+                isDone: false,
+                category: taskContent.category,
               },
             ];
             return { ...oldUser, tasks: newTasks };
@@ -116,15 +157,6 @@ export default function ToDoForm(props: any) {
           });
         }
         props.setShowForm(false);
-        setTaskContent({
-          title: "",
-          desc: "",
-          category: {
-            cat_name: "default",
-            color_header: "#00a4ba",
-            color_body: "#00ceea",
-          },
-        });
       } catch (error: any) {
         throw new Error("Fehler beim Erstellen/Ändern der Aufgabe aufgetreten");
       }
@@ -134,7 +166,7 @@ export default function ToDoForm(props: any) {
   return (
     <Dialog
       open={props.open}
-      onClose={() => props.setShowForm(false)}
+      onClose={handleClose}
       PaperProps={{
         component: "form",
         onSubmit: (event: React.FormEvent<HTMLFormElement>) =>
@@ -194,13 +226,14 @@ export default function ToDoForm(props: any) {
         <CategoryMenu
           changeCategory={changeCategory}
           open={open}
-          handleClose={handleClose}
+          handleClose={handleDropDownClose}
           anchorEl={anchorEl}
           categories={props.categories}
           user={props.user}
           setUser={props.setUser}
         />
         <DialogActions>
+          <Button onClick={handleClose}>Abbrechen</Button>
           <Button type="submit">
             {props.type === "create"
               ? "Aufgabe erstellen"

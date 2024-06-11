@@ -14,12 +14,14 @@ import {
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
-import { BASE_URL, Category } from "../App";
+import { BASE_URL, Category, User } from "../App";
 import { useState } from "react";
 import ColorPicker from "./ColorPicker";
 
 export default function CategoryMenu(props: any) {
+  const [dialogType, setDialogType] = useState("create");
   const [category, setCategory] = useState<Category>({
+    id: 1,
     cat_name: "",
     color_header: "#00a4ba",
     color_body: "#00ceea",
@@ -31,14 +33,27 @@ export default function CategoryMenu(props: any) {
       return { ...oldCategory, [event.target.name]: event.target.value };
     });
   }
-
-  const submitInput = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  function handleClose() {
+    setDialogType("create");
+    setShowDialog(false);
+    setCategory({
+      id: 1,
+      cat_name: "",
+      color_header: "#00a4ba",
+      color_body: "#00ceea",
+    });
+  }
+  const submitInput = async () => {
     const token = sessionStorage.getItem("token");
     if (token && category.cat_name !== "default") {
+      const path =
+        dialogType === "create"
+          ? `/${props.user.name}/categories`
+          : `/${props.user.name}/categories/${category.id}`;
+      const method = dialogType === "create" ? "POST" : "PATCH";
       try {
-        const res = await fetch(BASE_URL + `/${props.user.name}/categories`, {
-          method: "POST",
+        const res = await fetch(BASE_URL + path, {
+          method: method,
           headers: {
             "Content-Type": "application/json",
             Authorization: token,
@@ -51,36 +66,94 @@ export default function CategoryMenu(props: any) {
         if (!res.ok) {
           throw new Error(data.error || "Unbekannter Fehler aufgetreten");
         }
-        props.setUser((oldUser: any) => {
-          var newCategories = [
-            ...oldUser.categories,
-            {
-              cat_name: category.cat_name,
-              color_header: category.color_header,
-              color_body: category.color_body,
-            },
-          ];
-          return { ...oldUser, categories: newCategories };
-        });
-        setShowDialog(false);
-        setCategory({
-          cat_name: "",
-          color_header: "#00a4ba",
-          color_body: "#00ceea",
-        });
+        if (dialogType === "create") {
+          props.setUser((oldUser: User) => {
+            var newCategories = [
+              ...oldUser.categories,
+              {
+                id: data.id,
+                cat_name: category.cat_name,
+                color_header: category.color_header,
+                color_body: category.color_body,
+              },
+            ];
+            return { ...oldUser, categories: newCategories };
+          });
+        } else {
+          props.setUser((oldUser: User) => {
+            const updatedCategories = oldUser.categories.map(
+              (cat: Category) => {
+                if (cat.id === category.id) {
+                  cat.cat_name = category.cat_name;
+                  cat.color_header = category.color_header;
+                  cat.color_body = category.color_body;
+                  return cat;
+                } else {
+                  return cat;
+                }
+              }
+            );
+            return { ...oldUser, categories: updatedCategories };
+          });
+        }
+
+        props.changeCategory(
+          category.id,
+          category.cat_name,
+          category.color_header,
+          category.color_body
+        );
+        handleClose();
+        props.handleClose();
       } catch (error: any) {
-        throw new Error("Fehler beim Erstellen/Ändern der Aufgabe aufgetreten");
+        throw new Error(
+          "Fehler beim Erstellen/Ändern der Kategorie aufgetreten"
+        );
       }
     }
   };
 
-  function editCategory() {
-    //TODO!
+  function editCategory(category: Category) {
+    setCategory(category);
+    setDialogType("edit");
+    setShowDialog(true);
   }
 
-  function deleteCategory() {
-    //TODO!
-  }
+  const deleteCategory = async (id: number) => {
+    const token = sessionStorage.getItem("token");
+    if (token) {
+      try {
+        const res = await fetch(
+          BASE_URL + `/${props.user.name}/categories/${id}/delete`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token,
+            },
+          }
+        );
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+        }
+        props.setUser((oldUser: User) => {
+          const updatedCategories = oldUser.categories.filter(
+            (category: Category) => category.id !== id
+          );
+          return {
+            ...oldUser,
+            tasks: data.tasks,
+            categories: updatedCategories,
+          };
+        });
+        props.changeCategory(1, "default", "#00a4ba", "#00ceea");
+      } catch (error: any) {
+        console.log("Fehler beim Löschen der Aufgabe:", error.message);
+      }
+    }
+  };
 
   const categoryElements = props.categories.map(
     (category: Category, idx: number) => (
@@ -91,25 +164,30 @@ export default function CategoryMenu(props: any) {
           justifyContent: "space-between",
           alignItems: "center",
         }}
-        onClick={() =>
+        onClick={() => {
           props.changeCategory(
+            category.id,
             category.cat_name,
             category.color_header,
             category.color_body
-          )
-        }
+          );
+          props.handleClose();
+        }}
       >
         {category.cat_name !== "default"
           ? category.cat_name
           : "nicht kategorisiert"}
         <div>
           {category.cat_name !== "default" && (
-            <IconButton size="small" onClick={editCategory}>
+            <IconButton size="small" onClick={() => editCategory(category)}>
               <EditIcon fontSize="small" />
             </IconButton>
           )}
           {category.cat_name !== "default" && (
-            <IconButton size="small" onClick={deleteCategory}>
+            <IconButton
+              size="small"
+              onClick={() => deleteCategory(category.id)}
+            >
               <DeleteIcon fontSize="small" />
             </IconButton>
           )}
@@ -131,20 +209,21 @@ export default function CategoryMenu(props: any) {
       >
         {categoryElements}
         <Divider sx={{ my: 0.5 }} />
-        <MenuItem onClick={() => setShowDialog(true)}>
+        <MenuItem
+          onClick={() => {
+            setShowDialog(true);
+            props.handleClose();
+          }}
+        >
           Kategorie hinzufügen
         </MenuItem>
       </Menu>
-      <Dialog
-        open={showDialog}
-        onClose={() => setShowDialog(false)}
-        PaperProps={{
-          component: "form",
-          onSubmit: (event: React.FormEvent<HTMLFormElement>) =>
-            submitInput(event),
-        }}
-      >
-        <DialogTitle>Neue Kategorie anlegen</DialogTitle>
+      <Dialog open={showDialog} onClose={handleClose}>
+        <DialogTitle>
+          {dialogType === "create"
+            ? "Neue Kategorie anlegen"
+            : "Kategorie bearbeiten"}
+        </DialogTitle>
         <DialogContent>
           <DialogContentText>
             Bitte Kategorienamen und optional eine Farbe angeben
@@ -163,15 +242,30 @@ export default function CategoryMenu(props: any) {
           />
           <Grid container spacing={2}>
             <Grid item xs={6}>
-              <ColorPicker setCategory={setCategory} type="color_header" />
+              <ColorPicker
+                setCategory={setCategory}
+                categoryColor={category.color_header}
+                dialogType={dialogType}
+                type="color_header"
+              />
             </Grid>
             <Grid item xs={6}>
-              <ColorPicker setCategory={setCategory} type="color_body" />
+              <ColorPicker
+                setCategory={setCategory}
+                categoryColor={category.color_body}
+                dialogType={dialogType}
+                type="color_body"
+              />
             </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button type="submit">Kategorie anlegen</Button>
+          <Button onClick={handleClose}>Abbrechen</Button>
+          <Button onClick={submitInput}>
+            {dialogType === "create"
+              ? "Kategorie anlegen"
+              : "Änderungen speichern"}
+          </Button>
         </DialogActions>
       </Dialog>
     </>

@@ -29,9 +29,7 @@ export default function PopupForm(props: any) {
     }
   }
 
-  const submitInput = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
+  const submitInput = async () => {
     if (props.showPopup === 1) {
       if (userCredentials.password !== repeatedPassword) {
         setErrorMessage("Passwörter sind nicht identisch!");
@@ -99,11 +97,6 @@ export default function PopupForm(props: any) {
         setErrorMessage("");
         props.setShowPopup(0);
       }}
-      PaperProps={{
-        component: "form",
-        onSubmit: (event: React.FormEvent<HTMLFormElement>) =>
-          submitInput(event),
-      }}
     >
       <DialogTitle>
         {props.showPopup === 1
@@ -146,7 +139,7 @@ export default function PopupForm(props: any) {
           </DialogContentText>
         )}
         <DialogActions>
-          <Button type="submit">
+          <Button onClick={submitInput}>
             {props.showPopup === 1 ? "registrieren" : "anmelden"}
           </Button>
         </DialogActions>

@@ -26,12 +26,10 @@
   transition: .3s ease-in;
 }
 .todo--done {
-  background-color: rgb(0, 206, 0);
   text-decoration: line-through;
   transition: .3s ease-in;
 }
 .todo--done .todo--title {
-  background-color: rgb(0, 164, 0);
   text-decoration: line-through;
   transition: .3s ease-in;
 }

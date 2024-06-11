@@ -1,6 +1,6 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Wheel from "@uiw/react-color-wheel";
-import { hsvaToHex } from "@uiw/color-convert";
+import { hsvaToHex, hexToHsva } from "@uiw/color-convert";
 import { Category } from "../App";
 
 export default function ColorPicker(props: any) {
@@ -10,6 +10,18 @@ export default function ColorPicker(props: any) {
     v: props.type === "color_header" ? 70 : 100,
     a: 1,
   });
+  useEffect(() => {
+    if (props.dialogType === "edit") {
+      setHsva(hexToHsva(props.categoryColor));
+    } else if (props.dialogType === "create") {
+      setHsva({
+        h: 0,
+        s: 0,
+        v: props.type === "color_header" ? 70 : 100,
+        a: 1,
+      });
+    }
+  }, [props.category, props.dialogType]);
   return (
     <>
       <Fragment>

@@ -16,6 +16,7 @@ export type User = {
   categories: Category[];
 };
 export type Category = {
+  id: number;
   cat_name: string;
   color_header: string;
   color_body: string;
