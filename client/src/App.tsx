@@ -9,6 +9,7 @@ export type Task = {
   desc: string;
   isDone: boolean;
   category: Category;
+  owner: string;
 };
 export type User = {
   name: string;

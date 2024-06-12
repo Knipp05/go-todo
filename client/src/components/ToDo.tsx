@@ -2,6 +2,7 @@ import { IconButton } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import EditIcon from "@mui/icons-material/Edit";
+import ShareIcon from "@mui/icons-material/Share";
 import "../App.css";
 import { BASE_URL, Task, User } from "../App";
 
@@ -86,18 +87,30 @@ export default function ToDo(props: any) {
             ? "nicht kategorisiert"
             : props.data.category.cat_name}
         </h3>
-        <IconButton
-          size="small"
-          onClick={() => props.handleEditClick(props.data)}
-        >
-          <EditIcon />
-        </IconButton>
+        {props.user.name === props.data.owner && (
+          <IconButton
+            size="small"
+            onClick={() => props.handleShareClick(props.data)}
+          >
+            <ShareIcon />
+          </IconButton>
+        )}
+        {props.user.name === props.data.owner && (
+          <IconButton
+            size="small"
+            onClick={() => props.handleEditClick(props.data)}
+          >
+            <EditIcon />
+          </IconButton>
+        )}
       </div>
       <div className="todo--desc">
         <p>{props.data.desc}</p>
-        <IconButton size="small" onClick={() => handleDelete(props.data.id)}>
-          <DeleteIcon />
-        </IconButton>
+        {props.user.name === props.data.owner && (
+          <IconButton size="small" onClick={() => handleDelete(props.data.id)}>
+            <DeleteIcon />
+          </IconButton>
+        )}
         <IconButton size="small" onClick={() => handleCheck(props.data.id)}>
           <CheckCircleIcon />
         </IconButton>
