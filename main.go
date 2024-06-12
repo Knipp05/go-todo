@@ -15,17 +15,18 @@ import (
 )
 
 type task struct {
-	ID       int    `json:"id"`
-	Title    string `json:"title"`
-	Desc     string `json:"desc"`
-	IsDone   bool   `json:"isDone"`
-	Category string `json:"category"`
+	ID       int      `json:"id"`
+	Title    string   `json:"title"`
+	Desc     string   `json:"desc"`
+	IsDone   bool     `json:"isDone"`
+	Category category `json:"category"`
 }
 
-type user struct {
-	Name     string `json:"name"`
-	Password string `json:"password"`
-	Tasks    []task `json:"tasks"`
+type category struct {
+	ID           int    `json:"id"`
+	Cat_name     string `json:"cat_name"`
+	Color_header string `json:"color_header"`
+	Color_body   string `json:"color_body"`
 }
 
 var jwtSecret = []byte("3F6C8DC3EEBB3987C95E87E15D629") // Key generieren und der Einfachheit halber hier fest codieren
@@ -74,12 +75,12 @@ func jwtMiddleware() fiber.Handler {
 	}
 }
 
-func NewUser(name, password string, tasks []task) *user {
-	newUser := user{Name: name, Password: password, Tasks: tasks}
-	return &newUser
-}
-func NewTask(id int, title string, desc string, isDone bool, category string) *task {
+func NewTask(id int, title string, desc string, isDone bool, category category) *task {
 	newTask := task{ID: id, Title: title, Desc: desc, IsDone: isDone, Category: category}
+	return &newTask
+}
+func NewCategory(id int, cat_name, color_header, color_body string) *category {
+	newTask := category{ID: id, Cat_name: cat_name, Color_header: color_header, Color_body: color_body}
 	return &newTask
 }
 
@@ -89,19 +90,33 @@ func initTables() {
 		password TEXT NOT NULL
 	);`
 
+	categoriesTable := `CREATE TABLE IF NOT EXISTS categories (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		cat_name TEXT NOT NULL,
+		color_header TEXT,
+		color_body TEXT,
+		user_name TEXT,
+		FOREIGN KEY (user_name) REFERENCES users(name)
+	);`
+
 	tasksTable := `CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
         desc TEXT,
 		isDone BOOL,
-		category TEXT,
+		category_id INTEGER,
         user_name TEXT,
+		FOREIGN KEY (category_id) REFERENCES categories(id),
         FOREIGN KEY (user_name) REFERENCES users(name)
     );`
 
 	_, err := db.Exec(usersTable)
 	if err != nil {
 		log.Fatal("Fehler beim Erstellen der User Tabelle")
+	}
+	_, err = db.Exec(categoriesTable)
+	if err != nil {
+		log.Fatal(err)
 	}
 	_, err = db.Exec(tasksTable)
 	if err != nil {
@@ -115,24 +130,19 @@ func addUser(name, password string) error {
 	if err != nil {
 		return errors.New("Benutzer existiert bereits")
 	}
+	query = `INSERT INTO categories (cat_name, color_header, color_body, user_name) VALUES (?,?,?,?)`
+	_, err = db.Exec(query, "default", "#00a4ba", "#00ceea", name)
+	if err != nil {
+		return errors.New("Kategorie default konnte nicht angelegt werden")
+	}
 	return nil
 }
 
-/* func deleteUser(name string) {
-	taskQuery := `DELETE FROM tasks WHERE user_name = ?`
-	_, err := db.Exec(taskQuery, name)
-	checkError(err)
-	userQuery := `DELETE FROM users WHERE name = ?`
-	_, err = db.Exec(userQuery, name)
-	checkError(err)
-	delete(users, name)
-} */
-
-func loginUser(inputName, inputPassword string) (token string, name string, tasks []task, err error) {
+func loginUser(inputName, inputPassword string) (token string, name string, tasks []task, categories []category, err error) {
 	query := `SELECT name, password FROM users WHERE name=?`
 	user, err := db.Query(query, inputName)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, nil, err
 	}
 	defer user.Close()
 
@@ -142,25 +152,26 @@ func loginUser(inputName, inputPassword string) (token string, name string, task
 		if err == nil && password == inputPassword {
 			token, err := generateJWT(name)
 			if err != nil {
-				return "", "", nil, err
+				return "", "", nil, nil, err
 			}
-			tasks, err := loadTasks(name)
-			if err != nil {
-				return "", "", nil, err
+			tasks := loadTasks(name)
+			if tasks == nil {
+				return "", "", nil, nil, errors.New("Fehler beim Laden der Tasks")
 			}
-			return token, name, tasks, nil
+			categories := loadCategories(name)
+			if categories == nil {
+				return "", "", nil, nil, errors.New("Fehler beim Laden der Kategorien")
+			}
+			return token, name, tasks, categories, nil
 		}
 	}
 
-	return "", "", nil, errors.New("Die Anmeldedaten sind nicht korrekt")
+	return "", "", nil, nil, errors.New("Die Anmeldedaten sind nicht korrekt")
 }
 
-func addTask(name string, title string, desc string, category string) *task {
-	if category == "" {
-		category = "default"
-	}
-	query := `INSERT INTO tasks (title, desc, isDone, category, user_name) VALUES (?,?,?,?,?)`
-	newTask, err := db.Exec(query, title, desc, false, category, name)
+func addTask(name string, title string, desc string, category category) *task {
+	query := `INSERT INTO tasks (title, desc, isDone, category_id, user_name) VALUES (?,?,?,?,?)`
+	newTask, err := db.Exec(query, title, desc, false, category.ID, name)
 	if err != nil {
 		return nil
 	}
@@ -177,9 +188,9 @@ func deleteTask(name string, id int) error {
 	}
 	return nil
 }
-func changeContent(name string, id int, title string, desc string) error {
-	query := `UPDATE tasks SET title = ?, desc = ? WHERE id = ? AND user_name = ?`
-	_, err := db.Exec(query, title, desc, id, name)
+func changeContent(name string, id int, title string, desc string, category category) error {
+	query := `UPDATE tasks SET title = ?, desc = ?, category_id = ? WHERE id = ? AND user_name = ?`
+	_, err := db.Exec(query, title, desc, category.ID, id, name)
 	if err != nil {
 		return err
 	}
@@ -193,34 +204,90 @@ func changeIsDone(name string, id int, isDone bool) error {
 	}
 	return nil
 }
-func changeCategory(name string, id int, category string) error {
-	query := `UPDATE tasks SET category = ? WHERE id = ? AND user_name = ?`
-	_, err := db.Exec(query, category, id, name)
+func changeCategory(name string, id int, cat_name, color_header, color_body string) error {
+	query := `UPDATE categories SET cat_name = ?, color_header = ?, color_body = ? WHERE id = ? AND user_name = ?`
+	_, err := db.Exec(query, cat_name, color_header, color_body, id, name)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func loadTasks(name string) ([]task, error) {
-	query := `SELECT id, title, desc, isDone, category FROM tasks WHERE user_name = ?`
+func loadTasks(name string) []task {
+	query := `
+		SELECT t.id, t.title, t.desc, t.isDone, c.id, c.cat_name, c.color_header, c.color_body 
+		FROM tasks t
+		LEFT JOIN categories c ON t.category_id = c.id
+		WHERE t.user_name = ?`
+
 	rows, err := db.Query(query, name)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	loadedTasks := make([]task, 0)
+	for rows.Next() {
+		var task_id, cat_id int
+		var title, desc, cat_name, color_header, color_body string
+		var isDone bool
+
+		err := rows.Scan(&task_id, &title, &desc, &isDone, &cat_id, &cat_name, &color_header, &color_body)
+		if err != nil {
+			return nil
+		}
+
+		loadedTasks = append(loadedTasks, *NewTask(task_id, title, desc, isDone, *NewCategory(cat_id, cat_name, color_header, color_body)))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil
+	}
+
+	return loadedTasks
+}
+
+func addCategory(cat_name, color_header, color_body, user_name string) *category {
+	query := `INSERT INTO categories (cat_name, color_header, color_body, user_name) VALUES (?,?,?,?)`
+	newCategory, err := db.Exec(query, cat_name, color_header, color_body, user_name)
+	if err != nil {
+		return nil
+	}
+	addedCategoryId, _ := newCategory.LastInsertId()
+	addedCategory := NewCategory(int(addedCategoryId), cat_name, color_header, color_body)
+	return addedCategory
+}
+func deleteCategory(user_name string, id int) ([]task, error) {
+	taskQuery := `UPDATE tasks SET category_id = 1 WHERE category_id = ? AND user_name = ?`
+	_, err := db.Exec(taskQuery, id, user_name)
 	if err != nil {
 		return nil, err
 	}
+	query := `DELETE FROM categories WHERE id = ? AND user_name = ?`
+	_, err = db.Exec(query, id, user_name)
+	if err != nil {
+		return nil, err
+	}
+	return loadTasks(user_name), nil
+}
+func loadCategories(name string) []category {
+	query := `SELECT id, cat_name, color_header, color_body FROM categories WHERE user_name = ?`
+	rows, err := db.Query(query, name)
+	if err != nil {
+		return nil
+	}
 	defer rows.Close()
-	loadedTasks := make([]task, 0)
+	loadedCategories := make([]category, 0)
 	for rows.Next() {
 		var id int
-		var title, desc, category string
-		var isDone bool
-		err := rows.Scan(&id, &title, &desc, &isDone, &category)
+		var cat_name, color_header, color_body string
+		err := rows.Scan(&id, &cat_name, &color_header, &color_body)
 		if err != nil {
-			return nil, err
+			return nil
 		}
-		loadedTasks = append(loadedTasks, *NewTask(id, title, desc, isDone, category))
+		loadedCategories = append(loadedCategories, *NewCategory(id, cat_name, color_header, color_body))
 	}
-	return loadedTasks, nil
+	return loadedCategories
 }
 
 func RegisterUser(c *fiber.Ctx) error {
@@ -257,39 +324,34 @@ func LogInUser(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 	}
 	if creds.Name != "" && creds.Password != "" {
-		token, name, tasks, err := loginUser(creds.Name, creds.Password)
+		token, name, tasks, categories, err := loginUser(creds.Name, creds.Password)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
-		return c.Status(200).JSON(fiber.Map{"token": token, "name": name, "tasks": tasks})
+		return c.Status(200).JSON(fiber.Map{"token": token, "name": name, "tasks": tasks, "categories": categories})
 	} else {
 		return c.Status(400).JSON(fiber.Map{"error": "Benutzername und Passwort dürfen nicht leer sein"})
 	}
 }
 
-func LogOutUser(c *fiber.Ctx) error {
-	return c.Status(200).JSON(fiber.Map{"msg": "Logout erfolgreich"})
-}
-
 func AddTask(c *fiber.Ctx) error {
 	name := c.Locals("name").(string)
 	type TaskInput struct {
-		Title    string `json:"title"`
-		Desc     string `json:"desc"`
-		Category string `json:"category"`
+		Title    string   `json:"title"`
+		Desc     string   `json:"desc"`
+		Category category `json:"category"`
 	}
 
 	var input TaskInput
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 	}
-
 	if input.Title != "" {
 		addedTask := addTask(name, input.Title, input.Desc, input.Category)
 		if addedTask == nil {
 			return c.Status(400).JSON(fiber.Map{"error": "Aufgabe konnte nicht erstellt werden"})
 		}
-		return c.Status(201).JSON(fiber.Map{"id": addedTask.ID, "title": addedTask.Title, "desc": addedTask.Desc, "isDone": addedTask.IsDone, "category": addedTask.Category})
+		return c.Status(201).JSON(fiber.Map{"id": addedTask.ID, "category": addedTask.Category})
 	} else {
 		return c.Status(400).JSON(fiber.Map{"error": "Titel darf nicht leer sein"})
 	}
@@ -312,8 +374,9 @@ func ChangeContent(c *fiber.Ctx) error {
 	name := c.Locals("name").(string)
 	id := c.Params("id")
 	type TaskInput struct {
-		Title string `json:"title"`
-		Desc  string `json:"desc"`
+		Title    string   `json:"title"`
+		Desc     string   `json:"desc"`
+		Category category `json:"category"`
 	}
 	var input TaskInput
 	if err := c.BodyParser(&input); err != nil {
@@ -324,11 +387,11 @@ func ChangeContent(c *fiber.Ctx) error {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 		}
-		err = changeContent(name, i, input.Title, input.Desc)
+		err = changeContent(name, i, input.Title, input.Desc, input.Category)
 		if err != nil {
-			return c.Status(400).JSON(fiber.Map{"error": "Titel konnte nicht geändert werden"})
+			return c.Status(400).JSON(fiber.Map{"error": "Aufgabe konnte nicht geändert werden"})
 		}
-		return c.Status(200).JSON(fiber.Map{"msg": "Titel erfolgreich geändert"})
+		return c.Status(200).JSON(fiber.Map{"msg": "Aufgabe erfolgreich geändert"})
 	} else {
 		return c.Status(400).JSON(fiber.Map{"error": "Titel darf nicht leer sein"})
 	}
@@ -358,20 +421,22 @@ func ChangeIsDone(c *fiber.Ctx) error {
 }
 func ChangeCategory(c *fiber.Ctx) error {
 	name := c.Locals("name").(string)
-	type TaskInput struct {
-		ID       string `json:"id"`
-		Category string `json:"category"`
+	id := c.Params("id")
+	type CategoryInput struct {
+		Cat_name     string `json:"cat_name"`
+		Color_header string `json:"color_header"`
+		Color_body   string `json:"color_body"`
 	}
-	var input TaskInput
+	var input CategoryInput
 	if err := c.BodyParser(&input); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 	}
-	if input.ID != "" {
-		i, err := strconv.Atoi(input.ID)
+	if input.Cat_name != "" {
+		i, err := strconv.Atoi(id)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 		}
-		err = changeCategory(name, i, input.Category)
+		err = changeCategory(name, i, input.Cat_name, input.Color_header, input.Color_body)
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "Kategorie konnte nicht geändert werden"})
 		}
@@ -381,14 +446,41 @@ func ChangeCategory(c *fiber.Ctx) error {
 	}
 }
 
-/* func logQuery(query string, args ...interface{}) {
-	log.Printf("Executing query: %s with args: %v\n", query, args)
-}
+func AddCategory(c *fiber.Ctx) error {
+	name := c.Locals("name").(string)
 
-func logDBStats() {
-	stats := db.Stats()
-	log.Printf("Open connections: %d, In use: %d, Idle: %d\n", stats.OpenConnections, stats.InUse, stats.Idle)
-} */
+	var input category
+	if err := c.BodyParser(&input); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+	}
+
+	if input.Cat_name != "" {
+		addedCategory := addCategory(input.Cat_name, input.Color_header, input.Color_body, name)
+		if addedCategory == nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Kategorie konnte nicht erstellt werden"})
+		}
+		return c.Status(201).JSON(fiber.Map{"id": addedCategory.ID})
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Kategoriename darf nicht leer sein"})
+	}
+}
+func DeleteCategory(c *fiber.Ctx) error {
+	name := c.Locals("name").(string)
+	id := c.Params("id")
+	if id != "" {
+		i, err := strconv.Atoi(id)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Fehler beim Löschen aufgetreten"})
+		}
+		updatedTasks, err := deleteCategory(name, i)
+		if err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Fehler beim Löschen aufgetreten"})
+		}
+		return c.Status(200).JSON(fiber.Map{"tasks": updatedTasks})
+	} else {
+		return c.Status(400).JSON(fiber.Map{"error": "Fehler beim Löschen aufgetreten"})
+	}
+}
 
 var db *sql.DB
 
@@ -402,16 +494,9 @@ func main() {
 
 	initTables()
 
-	/* go func() {
-		for {
-			logDBStats()
-			time.Sleep(10 * time.Second)
-		}
-	}() */
-
 	app := fiber.New()
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "http://localhost:5173",
+		AllowOrigins: "http://localhost:5173, http://192.168.178.69:5173",
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
 	app.Post("/api/users/new", RegisterUser)
@@ -419,11 +504,16 @@ func main() {
 
 	app.Use(jwtMiddleware())
 
-	app.Delete("/api/users/logout", LogOutUser)
-	app.Delete("/api/tasks/:id", DeleteTask)
-	app.Patch("/api/tasks/:id/isdone/:isDone", ChangeIsDone)
-	app.Patch("/api/tasks/:id/content", ChangeContent)
-	app.Post("/api/tasks", AddTask)
+	// Task Routen
+	app.Post("/api/:name/tasks", AddTask)
+	app.Delete("/api/:name/tasks/:id", DeleteTask)
+	app.Patch("/api/:name/tasks/:id/:isDone", ChangeIsDone)
+	app.Patch("/api/:name/tasks/:id", ChangeContent)
+
+	// Category Routen
+	app.Post("/api/:name/categories", AddCategory)
+	app.Patch("/api/:name/categories/:id/delete", DeleteCategory)
+	app.Patch("/api/:name/categories/:id", ChangeCategory)
 	app.Listen(":5000")
 	defer db.Close()
 }

@@ -1,33 +1,12 @@
 import { Button } from "@mui/material";
 import { useState } from "react";
 import PopupForm from "./PopupForm";
-import { BASE_URL } from "../App";
 
 export default function NavBar(props: any) {
   const [showPopup, setShowPopup] = useState(0);
   const handleLogout = async () => {
-    const token = sessionStorage.getItem("token");
-    if (token) {
-      try {
-        const res = await fetch(BASE_URL + `/users/logout`, {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token,
-          },
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Unbekannter Fehler aufgetreten");
-        }
-        props.setUser({ name: "", password: "", tasks: [] });
-        sessionStorage.removeItem("token");
-      } catch (error: any) {
-        throw new Error("Logout nicht erfolgreich");
-      }
-    }
+    props.setUser({ name: "", password: "", tasks: [], categories: [] });
+    sessionStorage.removeItem("token");
   };
   return (
     <header className="navbar">

@@ -6,25 +6,110 @@ import {
   DialogContentText,
   DialogTitle,
   TextField,
+  Grid,
 } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BASE_URL, Task, User } from "../App";
+import CategoryMenu from "./CategoryMenu";
+
 export default function ToDoForm(props: any) {
-  const [taskContent, setTaskContent] = useState(
-    props.type === "create"
-      ? { title: "", desc: "" }
-      : { title: props.data.title, desc: props.data.desc }
-  );
+  const [taskContent, setTaskContent] = useState({
+    title: "",
+    desc: "",
+    category: {
+      id: 1,
+      cat_name: "default",
+      color_header: "#00a4ba",
+      color_body: "#00ceea",
+    },
+  });
+
+  useEffect(() => {
+    if (props.type === "edit" && props.data) {
+      setTaskContent({
+        title: props.data.title,
+        desc: props.data.desc,
+        category: props.data.category,
+      });
+    } else if (props.type === "create") {
+      setTaskContent({
+        title: "",
+        desc: "",
+        category: {
+          id: 1,
+          cat_name: "default",
+          color_header: "#00a4ba",
+          color_body: "#00ceea",
+        },
+      });
+    }
+  }, [props.data, props.type]);
+
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const open = Boolean(anchorEl);
+
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleDropDownClose = () => {
+    setAnchorEl(null);
+  };
+
+  function handleClose() {
+    props.setShowForm(false);
+    if (props.type === "edit" && props.data) {
+      setTaskContent({
+        title: props.data.title,
+        desc: props.data.desc,
+        category: props.data.category,
+      });
+    } else if (props.type === "create") {
+      setTaskContent({
+        title: "",
+        desc: "",
+        category: {
+          id: 1,
+          cat_name: "default",
+          color_header: "#00a4ba",
+          color_body: "#00ceea",
+        },
+      });
+    }
+  }
+
+  function changeCategory(
+    id: number,
+    cat_name: string,
+    color_header: string,
+    color_body: string
+  ) {
+    setTaskContent((oldContent) => {
+      return {
+        ...oldContent,
+        category: {
+          id: id,
+          cat_name: cat_name,
+          color_header: color_header,
+          color_body: color_body,
+        },
+      };
+    });
+  }
+
   function handleInput(event: any) {
     setTaskContent((oldContent) => {
       return { ...oldContent, [event.target.name]: event.target.value };
     });
   }
+
   const submitInput = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const token = sessionStorage.getItem("token");
     const target =
-      props.type === "create" ? "/tasks" : `/tasks/${props.data.id}/content`;
+      props.type === "create"
+        ? `/${props.user.id}/tasks`
+        : `/${props.user.name}/tasks/${props.data.id}`;
     const method = props.type === "create" ? "POST" : "PATCH";
     if (token && taskContent.title !== "") {
       try {
@@ -43,15 +128,15 @@ export default function ToDoForm(props: any) {
           throw new Error(data.error || "Unbekannter Fehler aufgetreten");
         }
         if (props.type === "create") {
-          props.setUser((oldUser: any) => {
+          props.setUser((oldUser: User) => {
             var newTasks = [
               ...oldUser.tasks,
               {
                 id: data.id,
-                title: data.title,
-                desc: data.desc,
-                isDone: data.isDone,
-                category: data.category,
+                title: taskContent.title,
+                desc: taskContent.desc,
+                isDone: false,
+                category: taskContent.category,
               },
             ];
             return { ...oldUser, tasks: newTasks };
@@ -62,6 +147,7 @@ export default function ToDoForm(props: any) {
               if (task.id === props.data.id) {
                 task.title = taskContent.title;
                 task.desc = taskContent.desc;
+                task.category = taskContent.category;
                 return task;
               } else {
                 return task;
@@ -76,10 +162,11 @@ export default function ToDoForm(props: any) {
       }
     }
   };
+
   return (
     <Dialog
       open={props.open}
-      onClose={() => props.setShowForm(false)}
+      onClose={handleClose}
       PaperProps={{
         component: "form",
         onSubmit: (event: React.FormEvent<HTMLFormElement>) =>
@@ -96,26 +183,57 @@ export default function ToDoForm(props: any) {
           Bitte gib einen Titel und optional eine Beschreibung für die Aufgabe
           an
         </DialogContentText>
-        <TextField
-          required
-          id="title"
-          name="title"
-          label="Titel"
-          type="text"
-          variant="standard"
-          value={taskContent.title}
-          onChange={handleInput}
-        />
-        <TextField
-          id="desc"
-          name="desc"
-          label="Beschreibung"
-          type="text"
-          variant="standard"
-          value={taskContent.desc}
-          onChange={handleInput}
+        <Grid container direction="column" spacing={2}>
+          <Grid item>
+            <TextField
+              required
+              id="title"
+              name="title"
+              label="Titel"
+              type="text"
+              variant="standard"
+              value={taskContent.title}
+              onChange={handleInput}
+              fullWidth
+            />
+          </Grid>
+          <Grid item>
+            <TextField
+              id="desc"
+              name="desc"
+              label="Beschreibung"
+              type="text"
+              variant="standard"
+              value={taskContent.desc}
+              onChange={handleInput}
+              fullWidth
+            />
+          </Grid>
+          <Grid item>
+            <Button
+              id="basic-button"
+              aria-controls={open ? "basic-menu" : undefined}
+              aria-haspopup="true"
+              aria-expanded={open ? "true" : undefined}
+              onClick={handleClick}
+            >
+              {taskContent.category.cat_name !== "default"
+                ? taskContent.category.cat_name
+                : "nicht kategorisiert"}
+            </Button>
+          </Grid>
+        </Grid>
+        <CategoryMenu
+          changeCategory={changeCategory}
+          open={open}
+          handleClose={handleDropDownClose}
+          anchorEl={anchorEl}
+          categories={props.categories}
+          user={props.user}
+          setUser={props.setUser}
         />
         <DialogActions>
+          <Button onClick={handleClose}>Abbrechen</Button>
           <Button type="submit">
             {props.type === "create"
               ? "Aufgabe erstellen"

@@ -1,24 +1,25 @@
-import { Button } from "@mui/material";
+import { IconButton } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import EditIcon from "@mui/icons-material/Edit";
 import "../App.css";
 import { BASE_URL, Task, User } from "../App";
-import { useState } from "react";
-import ToDoForm from "./ToDoForm";
+
 export default function ToDo(props: any) {
-  const [showForm, setShowForm] = useState(false);
   const handleDelete = async (taskId: number) => {
     const token = sessionStorage.getItem("token");
     if (token) {
       try {
-        const res = await fetch(BASE_URL + `/tasks/${taskId}`, {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token,
-          },
-        });
+        const res = await fetch(
+          BASE_URL + `/${props.user.name}/tasks/${taskId}`,
+          {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: token,
+            },
+          }
+        );
 
         if (!res.ok) {
           const data = await res.json();
@@ -40,7 +41,7 @@ export default function ToDo(props: any) {
     if (token) {
       try {
         const res = await fetch(
-          BASE_URL + `/tasks/${taskid}/isdone/${props.data.isDone}`,
+          BASE_URL + `/${props.user.name}/tasks/${taskid}/${props.data.isDone}`,
           {
             method: "PATCH",
             headers: {
@@ -71,29 +72,36 @@ export default function ToDo(props: any) {
     }
   };
   return (
-    <div className={props.data.isDone ? "todo todo--done" : "todo"}>
-      <div className="todo--title">
-        <h3>{props.data.title}</h3>
-        <Button onClick={() => setShowForm(true)}>
+    <div
+      className={props.data.isDone ? "todo todo--done" : "todo"}
+      style={{ backgroundColor: props.data.category.color_body }}
+    >
+      <div
+        className="todo--title"
+        style={{ backgroundColor: props.data.category.color_header }}
+      >
+        <h2>{props.data.title}</h2>
+        <h3>
+          {props.data.category.cat_name === "default"
+            ? "nicht kategorisiert"
+            : props.data.category.cat_name}
+        </h3>
+        <IconButton
+          size="small"
+          onClick={() => props.handleEditClick(props.data)}
+        >
           <EditIcon />
-        </Button>
+        </IconButton>
       </div>
       <div className="todo--desc">
         <p>{props.data.desc}</p>
-        <Button onClick={() => handleDelete(props.data.id)}>
+        <IconButton size="small" onClick={() => handleDelete(props.data.id)}>
           <DeleteIcon />
-        </Button>
-        <Button onClick={() => handleCheck(props.data.id)}>
+        </IconButton>
+        <IconButton size="small" onClick={() => handleCheck(props.data.id)}>
           <CheckCircleIcon />
-        </Button>
+        </IconButton>
       </div>
-      <ToDoForm
-        open={showForm}
-        setShowForm={setShowForm}
-        setUser={props.setUser}
-        data={props.data}
-        type="edit"
-      />
     </div>
   );
 }
