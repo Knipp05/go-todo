@@ -30,64 +30,73 @@ export default function PopupForm(props: any) {
   }
 
   const submitInput = async () => {
-    if (props.showPopup === 1) {
-      if (userCredentials.password !== repeatedPassword) {
-        setErrorMessage("Passwörter sind nicht identisch!");
-        return;
-      }
-
-      try {
-        const res = await fetch(BASE_URL + `/users/new`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(userCredentials),
-        });
-
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+    if (
+      userCredentials.name.trim() !== "" &&
+      userCredentials.password.trim() !== ""
+    ) {
+      if (props.showPopup === 1) {
+        if (userCredentials.password !== repeatedPassword) {
+          setErrorMessage("Passwörter sind nicht identisch!");
+          return;
         }
 
-        setUserCredentials({ name: "", password: "" });
-        setRepeatedPassword("");
-        setErrorMessage("");
-        props.setShowPopup(0);
-      } catch (error: any) {
-        setErrorMessage(error.message);
-      }
-    }
-    if (props.showPopup === 2) {
-      try {
-        const res = await fetch(BASE_URL + `/users`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(userCredentials),
-        });
+        try {
+          const res = await fetch(BASE_URL + `/users/new`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(userCredentials),
+          });
 
-        const data = await res.json();
+          const data = await res.json();
 
-        if (!res.ok) {
-          throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+          if (!res.ok) {
+            throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+          }
+
+          setUserCredentials({ name: "", password: "" });
+          setRepeatedPassword("");
+          setErrorMessage("");
+          props.setShowPopup(0);
+        } catch (error: any) {
+          setErrorMessage(error.message);
         }
-
-        setUserCredentials({ name: "", password: "" });
-        setRepeatedPassword("");
-        setErrorMessage("");
-        sessionStorage.setItem("token", data.token);
-        props.setUser({
-          name: data.name,
-          tasks: data.tasks,
-          categories: data.categories,
-        });
-        props.setShowPopup(0);
-      } catch (error: any) {
-        setErrorMessage(error.message);
       }
+      if (props.showPopup === 2) {
+        try {
+          const res = await fetch(BASE_URL + `/users`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(userCredentials),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+          }
+
+          setUserCredentials({ name: "", password: "" });
+          setRepeatedPassword("");
+          setErrorMessage("");
+          sessionStorage.setItem("token", data.token);
+          props.setUser({
+            name: data.name,
+            tasks: data.tasks,
+            categories: data.categories,
+          });
+          props.setShowPopup(0);
+        } catch (error: any) {
+          setErrorMessage(error.message);
+        }
+      }
+    } else {
+      setErrorMessage(
+        "Name und Passwort dürfen nicht nur aus Leerzeichen bestehen"
+      );
     }
   };
   return (
@@ -111,6 +120,7 @@ export default function PopupForm(props: any) {
           label="Benutzername"
           type="text"
           variant="standard"
+          inputProps={{ maxLength: 14 }}
           onChange={handleInput}
         />
         <TextField

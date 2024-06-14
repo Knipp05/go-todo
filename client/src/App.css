@@ -51,6 +51,11 @@
 .todo--title Button {
   width: 5%;
 }
+.todo--title div {
+  width: 10%;
+  font-size: larger;
+  margin-top: 1%;
+}
 .todo--desc {
   width: 100%;
   display: flex;

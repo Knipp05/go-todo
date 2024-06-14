@@ -3,6 +3,7 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import EditIcon from "@mui/icons-material/Edit";
 import ShareIcon from "@mui/icons-material/Share";
+import PersonIcon from "@mui/icons-material/Person";
 import "../App.css";
 import { BASE_URL, Task, User } from "../App";
 
@@ -17,7 +18,7 @@ export default function ToDo(props: any) {
             method: "DELETE",
             headers: {
               "Content-Type": "application/json",
-              Authorization: token,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
@@ -42,13 +43,14 @@ export default function ToDo(props: any) {
     if (token) {
       try {
         const res = await fetch(
-          BASE_URL + `/${props.user.name}/tasks/${taskid}/${props.data.isDone}`,
+          BASE_URL + `/${props.user.name}/tasks/${taskid}`,
           {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
-              Authorization: token,
+              Authorization: `Bearer ${token}`,
             },
+            body: JSON.stringify({ ...props.data, isDone: !props.data.isDone }),
           }
         );
 
@@ -102,6 +104,11 @@ export default function ToDo(props: any) {
           >
             <EditIcon />
           </IconButton>
+        )}
+        {props.user.name !== props.data.owner && (
+          <div>
+            <PersonIcon /> {props.data.owner}
+          </div>
         )}
       </div>
       <div className="todo--desc">

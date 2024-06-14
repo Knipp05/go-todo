@@ -27,6 +27,7 @@ export default function CategoryMenu(props: any) {
     color_body: "#00ceea",
   });
   const [showDialog, setShowDialog] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   function handleInput(event: any) {
     setCategory((oldCategory) => {
@@ -36,6 +37,7 @@ export default function CategoryMenu(props: any) {
   function handleClose() {
     setDialogType("create");
     setShowDialog(false);
+    setErrorMessage("");
     setCategory({
       id: 1,
       cat_name: "",
@@ -45,7 +47,11 @@ export default function CategoryMenu(props: any) {
   }
   const submitInput = async () => {
     const token = sessionStorage.getItem("token");
-    if (token && category.cat_name !== "default") {
+    if (
+      token &&
+      category.cat_name !== "default" &&
+      category.cat_name.trim() !== ""
+    ) {
       const path =
         dialogType === "create"
           ? `/${props.user.name}/categories`
@@ -56,7 +62,7 @@ export default function CategoryMenu(props: any) {
           method: method,
           headers: {
             "Content-Type": "application/json",
-            Authorization: token,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(category),
         });
@@ -106,10 +112,13 @@ export default function CategoryMenu(props: any) {
         handleClose();
         props.handleClose();
       } catch (error: any) {
+        setErrorMessage(error);
         throw new Error(
           "Fehler beim Erstellen/Ändern der Kategorie aufgetreten"
         );
       }
+    } else {
+      setErrorMessage("Kategoriename ungültig");
     }
   };
 
@@ -129,7 +138,7 @@ export default function CategoryMenu(props: any) {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
-              Authorization: token,
+              Authorization: `Bearer ${token}`,
             },
           }
         );
@@ -235,11 +244,17 @@ export default function CategoryMenu(props: any) {
             label="Name"
             type="text"
             variant="standard"
+            inputProps={{ maxLength: 14 }}
             value={category.cat_name}
             onChange={handleInput}
             fullWidth
             margin="normal"
           />
+          {errorMessage !== "" && (
+            <DialogContentText sx={{ color: "red" }}>
+              {errorMessage}
+            </DialogContentText>
+          )}
           <Grid container spacing={2}>
             <Grid item xs={6}>
               <ColorPicker
