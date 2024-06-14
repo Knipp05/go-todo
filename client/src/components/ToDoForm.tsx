@@ -7,15 +7,21 @@ import {
   DialogTitle,
   TextField,
   Grid,
+  IconButton,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import { BASE_URL, Task, User } from "../App";
 import CategoryMenu from "./CategoryMenu";
+import ClearIcon from "@mui/icons-material/Clear";
 
 export default function ToDoForm(props: any) {
+  const [errorMessage, setErrorMessage] = useState("");
   const [taskContent, setTaskContent] = useState({
     title: "",
     desc: "",
+    isDone: false,
+    owner: props.user.name,
+    shared: [""],
     category: {
       id: 1,
       cat_name: "default",
@@ -23,18 +29,25 @@ export default function ToDoForm(props: any) {
       color_body: "#00ceea",
     },
   });
+  const [targetName, setTargetName] = useState("");
 
   useEffect(() => {
-    if (props.type === "edit" && props.data) {
+    if (props.type !== "create" && props.data) {
       setTaskContent({
         title: props.data.title,
         desc: props.data.desc,
+        isDone: props.data.isDone,
+        owner: props.data.owner,
+        shared: props.data.shared,
         category: props.data.category,
       });
     } else if (props.type === "create") {
       setTaskContent({
         title: "",
         desc: "",
+        isDone: false,
+        owner: props.user.name,
+        shared: [""],
         category: {
           id: 1,
           cat_name: "default",
@@ -43,7 +56,7 @@ export default function ToDoForm(props: any) {
         },
       });
     }
-  }, [props.data, props.type]);
+  }, [props.open]);
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
@@ -58,23 +71,22 @@ export default function ToDoForm(props: any) {
 
   function handleClose() {
     props.setShowForm(false);
-    if (props.type === "edit" && props.data) {
-      setTaskContent({
-        title: props.data.title,
-        desc: props.data.desc,
-        category: props.data.category,
-      });
-    } else if (props.type === "create") {
-      setTaskContent({
-        title: "",
-        desc: "",
-        category: {
-          id: 1,
-          cat_name: "default",
-          color_header: "#00a4ba",
-          color_body: "#00ceea",
-        },
-      });
+    setTaskContent({
+      title: "",
+      desc: "",
+      isDone: false,
+      owner: props.user.name,
+      shared: [""],
+      category: {
+        id: 1,
+        cat_name: "default",
+        color_header: "#00a4ba",
+        color_body: "#00ceea",
+      },
+    });
+    if (props.type === "share") {
+      setTargetName("");
+      setErrorMessage("");
     }
   }
 
@@ -98,26 +110,29 @@ export default function ToDoForm(props: any) {
   }
 
   function handleInput(event: any) {
-    setTaskContent((oldContent) => {
-      return { ...oldContent, [event.target.name]: event.target.value };
-    });
+    if (props.type !== "share") {
+      setTaskContent((oldContent) => {
+        return { ...oldContent, [event.target.name]: event.target.value };
+      });
+    } else {
+      setTargetName(event.target.value);
+    }
   }
 
-  const submitInput = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const changeTask = async () => {
     const token = sessionStorage.getItem("token");
     const target =
       props.type === "create"
-        ? `/${props.user.id}/tasks`
+        ? `/${props.user.name}/tasks`
         : `/${props.user.name}/tasks/${props.data.id}`;
     const method = props.type === "create" ? "POST" : "PATCH";
-    if (token && taskContent.title !== "") {
+    if (token && taskContent.title.trim() !== "") {
       try {
         const res = await fetch(BASE_URL + target, {
           method: method,
           headers: {
             "Content-Type": "application/json",
-            Authorization: token,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(taskContent),
         });
@@ -137,6 +152,8 @@ export default function ToDoForm(props: any) {
                 desc: taskContent.desc,
                 isDone: false,
                 category: taskContent.category,
+                owner: taskContent.owner,
+                shared: [""],
               },
             ];
             return { ...oldUser, tasks: newTasks };
@@ -156,32 +173,123 @@ export default function ToDoForm(props: any) {
             return { ...oldUser, tasks: updatedTasks };
           });
         }
-        props.setShowForm(false);
+        handleClose();
       } catch (error: any) {
         throw new Error("Fehler beim Erstellen/Ändern der Aufgabe aufgetreten");
       }
     }
   };
+  const shareTask = async () => {
+    const token = sessionStorage.getItem("token");
+    if (token && targetName !== "") {
+      try {
+        const res = await fetch(
+          BASE_URL + `/${props.user.name}/tasks/${props.data.id}/${targetName}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(taskContent),
+          }
+        );
+
+        if (!res.ok) {
+          const data = await res.json();
+          setErrorMessage(data.error);
+          throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+        }
+        props.setUser((oldUser: User) => {
+          const updatedTasks = oldUser.tasks.map((task: Task) => {
+            if (task.id === props.data.id) {
+              task.shared[0] === ""
+                ? (task.shared[0] = targetName)
+                : task.shared.push(targetName);
+              return task;
+            } else {
+              return task;
+            }
+          });
+          return { ...oldUser, tasks: updatedTasks };
+        });
+        handleClose();
+      } catch (error: any) {
+        throw new Error("Fehler beim Freigeben der Aufgabe aufgetreten");
+      }
+    }
+  };
+
+  const handleRemoveShare = async (target: string) => {
+    const token = sessionStorage.getItem("token");
+    if (token) {
+      try {
+        const res = await fetch(
+          BASE_URL + `/${props.user.name}/tasks/${props.data.id}/${target}`,
+          {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!res.ok) {
+          const data = await res.json();
+          setErrorMessage(data.error);
+          throw new Error(data.error || "Unbekannter Fehler aufgetreten");
+        }
+        props.setUser((oldUser: User) => {
+          const updatedTasks = oldUser.tasks.map((task: Task) => {
+            if (task.id === props.data.id) {
+              const updatedShares = task.shared.filter(
+                (share) => share !== target
+              );
+              task.shared = updatedShares;
+              return task;
+            } else {
+              return task;
+            }
+          });
+          return { ...oldUser, tasks: updatedTasks };
+        });
+        handleClose();
+      } catch (error: any) {
+        throw new Error("Fehler beim Freigeben der Aufgabe aufgetreten");
+      }
+    }
+  };
+
+  const sharedUsers =
+    props.data !== null
+      ? props.data.shared.map((share: string, idx: number) => (
+          <div key={idx} style={{ marginLeft: "4%" }}>
+            {share}{" "}
+            <IconButton size="small" onClick={() => handleRemoveShare(share)}>
+              <ClearIcon />
+            </IconButton>
+          </div>
+        ))
+      : null;
 
   return (
-    <Dialog
-      open={props.open}
-      onClose={handleClose}
-      PaperProps={{
-        component: "form",
-        onSubmit: (event: React.FormEvent<HTMLFormElement>) =>
-          submitInput(event),
-      }}
-    >
+    <Dialog open={props.open} onClose={handleClose}>
       <DialogContent>
-        <DialogTitle>
-          {props.type === "create"
-            ? "Neue Aufgabe anlegen"
-            : "Aufgabe bearbeiten"}
-        </DialogTitle>
+        {props.type !== "share" && (
+          <DialogTitle>
+            {props.type === "create"
+              ? "Neue Aufgabe anlegen"
+              : "Aufgabe bearbeiten"}
+          </DialogTitle>
+        )}
+        {props.type === "share" && (
+          <DialogTitle>Aufgabe für anderen Benutzer freigeben</DialogTitle>
+        )}
         <DialogContentText>
-          Bitte gib einen Titel und optional eine Beschreibung für die Aufgabe
-          an
+          {props.type !== "share"
+            ? "Bitte gib einen Titel und optional eine Beschreibung für die Aufgabe an"
+            : "Bitte gib den Benutzernamen ein, mit dem du diese Aufgabe teilen möchtest"}
         </DialogContentText>
         <Grid container direction="column" spacing={2}>
           <Grid item>
@@ -189,56 +297,80 @@ export default function ToDoForm(props: any) {
               required
               id="title"
               name="title"
-              label="Titel"
+              label={props.type !== "share" ? "Titel" : "Benutzer"}
               type="text"
               variant="standard"
-              value={taskContent.title}
+              inputProps={{ maxLength: 20 }}
+              value={props.type !== "share" ? taskContent.title : targetName}
               onChange={handleInput}
               fullWidth
             />
           </Grid>
-          <Grid item>
-            <TextField
-              id="desc"
-              name="desc"
-              label="Beschreibung"
-              type="text"
-              variant="standard"
-              value={taskContent.desc}
-              onChange={handleInput}
-              fullWidth
-            />
-          </Grid>
-          <Grid item>
-            <Button
-              id="basic-button"
-              aria-controls={open ? "basic-menu" : undefined}
-              aria-haspopup="true"
-              aria-expanded={open ? "true" : undefined}
-              onClick={handleClick}
+          {props.type === "share" && (
+            <DialogContentText
+              sx={{ color: "red", marginLeft: "2.5%", marginTop: "1%" }}
             >
-              {taskContent.category.cat_name !== "default"
-                ? taskContent.category.cat_name
-                : "nicht kategorisiert"}
-            </Button>
-          </Grid>
+              {errorMessage}
+            </DialogContentText>
+          )}
+          {props.type === "share" && props.data.shared[0] !== "" && (
+            <DialogTitle>Aufgabe bereits freigegeben für:</DialogTitle>
+          )}
+          {props.type === "share" && props.data.shared[0] !== "" && sharedUsers}
+          {props.type !== "share" && (
+            <Grid item>
+              <TextField
+                id="desc"
+                name="desc"
+                label="Beschreibung"
+                type="text"
+                variant="standard"
+                inputProps={{ maxLength: 128 }}
+                value={taskContent.desc}
+                onChange={handleInput}
+                fullWidth
+              />
+            </Grid>
+          )}
+          {props.type !== "share" && (
+            <Grid item>
+              <Button
+                id="basic-button"
+                aria-controls={open ? "basic-menu" : undefined}
+                aria-haspopup="true"
+                aria-expanded={open ? "true" : undefined}
+                onClick={handleClick}
+              >
+                {taskContent.category.cat_name !== "default"
+                  ? taskContent.category.cat_name
+                  : "nicht kategorisiert"}
+              </Button>
+            </Grid>
+          )}
         </Grid>
-        <CategoryMenu
-          changeCategory={changeCategory}
-          open={open}
-          handleClose={handleDropDownClose}
-          anchorEl={anchorEl}
-          categories={props.categories}
-          user={props.user}
-          setUser={props.setUser}
-        />
+        {props.type !== "share" && (
+          <CategoryMenu
+            changeCategory={changeCategory}
+            open={open}
+            handleClose={handleDropDownClose}
+            anchorEl={anchorEl}
+            categories={props.categories}
+            user={props.user}
+            setUser={props.setUser}
+          />
+        )}
         <DialogActions>
           <Button onClick={handleClose}>Abbrechen</Button>
-          <Button type="submit">
-            {props.type === "create"
-              ? "Aufgabe erstellen"
-              : "Änderungen speichern"}
-          </Button>
+          {props.type !== "share" && (
+            <Button onClick={changeTask}>
+              {props.type === "create"
+                ? "Aufgabe erstellen"
+                : "Änderungen speichern"}
+            </Button>
+          )}
+          {props.type === "share" && (
+            <Button onClick={shareTask}>Aufgabe freigeben</Button>
+          )}
         </DialogActions>
       </DialogContent>
     </Dialog>

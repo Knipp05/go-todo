@@ -9,14 +9,23 @@ import "../App.css";
 export default function Planer(props: any) {
   const [showForm, setShowForm] = useState(false);
   const [taskData, setTaskData] = useState<Task | null>(null);
+  const [formType, setFormType] = useState("create");
 
   function handleCreateClick() {
     setTaskData(null);
+    setFormType("create");
     setShowForm(true);
   }
 
   function handleEditClick(task: Task) {
     setTaskData(task);
+    setFormType("edit");
+    setShowForm(true);
+  }
+
+  function handleShareClick(task: Task) {
+    setTaskData(task);
+    setFormType("share");
     setShowForm(true);
   }
   const todoElements = props.user.tasks.map((task: Task, idx: number) => (
@@ -27,6 +36,7 @@ export default function Planer(props: any) {
       setUser={props.setUser}
       categories={props.user.categories}
       handleEditClick={handleEditClick}
+      handleShareClick={handleShareClick}
     />
   ));
   return (
@@ -44,7 +54,7 @@ export default function Planer(props: any) {
         setUser={props.setUser}
         user={props.user}
         categories={props.user.categories}
-        type={taskData ? "edit" : "create"}
+        type={formType}
         data={taskData}
       />
       {todoElements}
