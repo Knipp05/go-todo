@@ -85,6 +85,17 @@ export default function CategoryMenu(props: any) {
             ];
             return { ...oldUser, categories: newCategories };
           });
+          props.setTaskContent((oldContent: any) => {
+            return {
+              ...oldContent,
+              category: {
+                id: data.id,
+                cat_name: category.cat_name,
+                color_header: category.color_header,
+                color_body: category.color_body,
+              },
+            };
+          });
         } else {
           props.setUser((oldUser: User) => {
             const updatedCategories = oldUser.categories.map(
@@ -104,7 +115,7 @@ export default function CategoryMenu(props: any) {
         }
 
         props.changeCategory(
-          category.id,
+          data.id,
           category.cat_name,
           category.color_header,
           category.color_body

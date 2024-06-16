@@ -1,6 +1,7 @@
 import { IconButton } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import CheckBoxIcon from "@mui/icons-material/CheckBox";
+import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import EditIcon from "@mui/icons-material/Edit";
 import ShareIcon from "@mui/icons-material/Share";
 import PersonIcon from "@mui/icons-material/Person";
@@ -119,7 +120,7 @@ export default function ToDo(props: any) {
           </IconButton>
         )}
         <IconButton size="small" onClick={() => handleCheck(props.data.id)}>
-          <CheckCircleIcon />
+          {props.data.isDone ? <CheckBoxIcon /> : <CheckBoxOutlineBlankIcon />}
         </IconButton>
       </div>
     </div>

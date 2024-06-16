@@ -11,6 +11,7 @@ export type Task = {
   category: Category;
   owner: string;
   shared: string[];
+  order: number;
 };
 export type User = {
   name: string;
@@ -30,7 +31,6 @@ function App() {
     tasks: [],
     categories: [],
   });
-  const [socket, setSocket] = useState<WebSocket | null>(null);
 
   useEffect(() => {
     if (!user.name) {
@@ -39,7 +39,6 @@ function App() {
     const token = sessionStorage.getItem("token");
     if (!token) return;
     const ws = new WebSocket(`ws://localhost:5000/ws?token=${token}`);
-    setSocket(ws);
 
     ws.onmessage = (event) => {
       const updatedTask = JSON.parse(event.data);
@@ -52,7 +51,16 @@ function App() {
             return {
               ...oldUser,
               tasks: oldUser.tasks.map((task) =>
-                task.id === updatedTask.id ? updatedTask : task
+                task.id === updatedTask.id
+                  ? {
+                      ...task,
+                      title: updatedTask.title,
+                      desc: updatedTask.desc,
+                      isDone: updatedTask.isDone,
+                      category: updatedTask.category,
+                      shared: updatedTask.shared,
+                    }
+                  : task
               ),
             };
           } else {
