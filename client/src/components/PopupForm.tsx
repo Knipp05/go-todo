@@ -79,15 +79,15 @@ export default function PopupForm(props: any) {
             throw new Error(data.error || "Unbekannter Fehler aufgetreten");
           }
 
-          setUserCredentials({ name: "", password: "" });
-          setRepeatedPassword("");
-          setErrorMessage("");
           sessionStorage.setItem("token", data.token);
           props.setUser({
-            name: data.name,
+            name: userCredentials.name,
             tasks: data.tasks,
             categories: data.categories,
           });
+          setUserCredentials({ name: "", password: "" });
+          setRepeatedPassword("");
+          setErrorMessage("");
           props.setShowPopup(0);
         } catch (error: any) {
           setErrorMessage(error.message);

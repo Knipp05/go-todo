@@ -27,11 +27,6 @@ Diese einfache ToDo-Anwendung wurde serverseitig mit Go und clientseitig mit Rea
    go mod download
    ```
 
-3. Datenbank initialisieren:
-   ```sh
-   go run main.go
-   ```
-
 ### Frontend-Installation
 
 1. Gehe zum Frontend-Verzeichnis:
@@ -48,7 +43,7 @@ Diese einfache ToDo-Anwendung wurde serverseitig mit Go und clientseitig mit Rea
 
 3. Entwicklungsserver starten:
    ```sh
-   npm start
+   npm run dev
    ```
 
 ## Verwendung
@@ -63,7 +58,7 @@ Diese einfache ToDo-Anwendung wurde serverseitig mit Go und clientseitig mit Rea
 
    ```sh
    cd client
-   npm start
+   npm run dev
    ```
 
 3. Öffne deinen Browser und gehe zu `http://localhost:5173`.
