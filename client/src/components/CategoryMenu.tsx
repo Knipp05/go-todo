@@ -53,9 +53,7 @@ export default function CategoryMenu(props: any) {
       category.cat_name.trim() !== ""
     ) {
       const path =
-        dialogType === "create"
-          ? `/${props.user.name}/categories`
-          : `/${props.user.name}/categories/${category.id}`;
+        dialogType === "create" ? `/categories` : `/categories/${category.id}`;
       const method = dialogType === "create" ? "POST" : "PATCH";
       try {
         const res = await fetch(BASE_URL + path, {
@@ -85,6 +83,17 @@ export default function CategoryMenu(props: any) {
             ];
             return { ...oldUser, categories: newCategories };
           });
+          props.setTaskContent((oldContent: any) => {
+            return {
+              ...oldContent,
+              category: {
+                id: data.id,
+                cat_name: category.cat_name,
+                color_header: category.color_header,
+                color_body: category.color_body,
+              },
+            };
+          });
         } else {
           props.setUser((oldUser: User) => {
             const updatedCategories = oldUser.categories.map(
@@ -104,7 +113,7 @@ export default function CategoryMenu(props: any) {
         }
 
         props.changeCategory(
-          category.id,
+          data.id,
           category.cat_name,
           category.color_header,
           category.color_body
@@ -132,16 +141,13 @@ export default function CategoryMenu(props: any) {
     const token = sessionStorage.getItem("token");
     if (token) {
       try {
-        const res = await fetch(
-          BASE_URL + `/${props.user.name}/categories/${id}/delete`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const res = await fetch(BASE_URL + `/categories/${id}/delete`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         const data = await res.json();
         if (!res.ok) {

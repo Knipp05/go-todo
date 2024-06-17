@@ -22,6 +22,7 @@ export default function ToDoForm(props: any) {
     isDone: false,
     owner: props.user.name,
     shared: [""],
+    order: props.user.tasks.length,
     category: {
       id: 1,
       cat_name: "default",
@@ -39,6 +40,7 @@ export default function ToDoForm(props: any) {
         isDone: props.data.isDone,
         owner: props.data.owner,
         shared: props.data.shared,
+        order: props.taskOrder,
         category: props.data.category,
       });
     } else if (props.type === "create") {
@@ -48,6 +50,7 @@ export default function ToDoForm(props: any) {
         isDone: false,
         owner: props.user.name,
         shared: [""],
+        order: props.user.tasks.length,
         category: {
           id: 1,
           cat_name: "default",
@@ -77,6 +80,7 @@ export default function ToDoForm(props: any) {
       isDone: false,
       owner: props.user.name,
       shared: [""],
+      order: props.user.tasks.length,
       category: {
         id: 1,
         cat_name: "default",
@@ -122,9 +126,7 @@ export default function ToDoForm(props: any) {
   const changeTask = async () => {
     const token = sessionStorage.getItem("token");
     const target =
-      props.type === "create"
-        ? `/${props.user.name}/tasks`
-        : `/${props.user.name}/tasks/${props.data.id}`;
+      props.type === "create" ? `/tasks` : `/tasks/${props.data.id}`;
     const method = props.type === "create" ? "POST" : "PATCH";
     if (token && taskContent.title.trim() !== "") {
       try {
@@ -154,6 +156,7 @@ export default function ToDoForm(props: any) {
                 category: taskContent.category,
                 owner: taskContent.owner,
                 shared: [""],
+                order: taskContent.order,
               },
             ];
             return { ...oldUser, tasks: newTasks };
@@ -181,17 +184,23 @@ export default function ToDoForm(props: any) {
   };
   const shareTask = async () => {
     const token = sessionStorage.getItem("token");
-    if (token && targetName !== "") {
+    if (token && targetName.trim() !== "") {
       try {
         const res = await fetch(
-          BASE_URL + `/${props.user.name}/tasks/${props.data.id}/${targetName}`,
+          BASE_URL + `/tasks/${props.data.id}/${targetName}`,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${token}`,
             },
-            body: JSON.stringify(taskContent),
+            body: JSON.stringify({
+              ...taskContent,
+              shared:
+                taskContent.shared[0] === ""
+                  ? [targetName]
+                  : [...taskContent.shared, targetName],
+            }),
           }
         );
 
@@ -225,7 +234,7 @@ export default function ToDoForm(props: any) {
     if (token) {
       try {
         const res = await fetch(
-          BASE_URL + `/${props.user.name}/tasks/${props.data.id}/${target}`,
+          BASE_URL + `/tasks/${props.data.id}/${target}`,
           {
             method: "DELETE",
             headers: {
@@ -300,7 +309,7 @@ export default function ToDoForm(props: any) {
               label={props.type !== "share" ? "Titel" : "Benutzer"}
               type="text"
               variant="standard"
-              inputProps={{ maxLength: 20 }}
+              inputProps={{ maxLength: 40 }}
               value={props.type !== "share" ? taskContent.title : targetName}
               onChange={handleInput}
               fullWidth
@@ -354,9 +363,10 @@ export default function ToDoForm(props: any) {
             open={open}
             handleClose={handleDropDownClose}
             anchorEl={anchorEl}
-            categories={props.categories}
+            categories={props.user.categories}
             user={props.user}
             setUser={props.setUser}
+            setTaskContent={setTaskContent}
           />
         )}
         <DialogActions>

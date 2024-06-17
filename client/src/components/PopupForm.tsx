@@ -94,9 +94,7 @@ export default function PopupForm(props: any) {
         }
       }
     } else {
-      setErrorMessage(
-        "Name und Passwort dürfen nicht nur aus Leerzeichen bestehen"
-      );
+      setErrorMessage("Name und Passwort dürfen nicht leer sein");
     }
   };
   return (

@@ -27,6 +27,7 @@ type task struct {
 	Category category `json:"category"`
 	Owner    string   `json:"owner"`
 	Shared   []string `json:"shared"`
+	Order    int      `json:"order"`
 }
 
 type category struct {
@@ -84,7 +85,6 @@ func jwtMiddleware() fiber.Handler {
 
 		if claims, ok := token.Claims.(*Claims); ok && token.Valid {
 			c.Locals("name", claims.Name)
-			fmt.Printf("Benutzername aus Token: %s\n", claims.Name)
 		} else {
 			return c.Status(401).JSON(fiber.Map{"error": "Unauthorized"})
 		}
@@ -92,8 +92,8 @@ func jwtMiddleware() fiber.Handler {
 	}
 }
 
-func NewTask(id int, title string, desc string, isDone bool, category category, owner string, shared []string) *task {
-	newTask := task{ID: id, Title: title, Desc: desc, IsDone: isDone, Category: category, Owner: owner, Shared: shared}
+func NewTask(id int, title string, desc string, isDone bool, category category, owner string, shared []string, order int) *task {
+	newTask := task{ID: id, Title: title, Desc: desc, IsDone: isDone, Category: category, Owner: owner, Shared: shared, Order: order}
 	return &newTask
 }
 func NewCategory(id int, cat_name, color_header, color_body string) *category {
@@ -135,6 +135,15 @@ func initTables() {
 	FOREIGN KEY (task_id) REFERENCES tasks(id)
 	)`
 
+	orderTable := `CREATE TABLE IF NOT EXISTS task_order (
+	user_name TEXT,
+	task_id INTEGER,
+	order_id INTEGER,
+	PRIMARY KEY(user_name, task_id),
+	FOREIGN KEY (user_name) REFERENCES users(name),
+	FOREIGN KEY (task_id) REFERENCES tasks(id)
+	)`
+
 	_, err := db.Exec(usersTable)
 	if err != nil {
 		log.Fatal("Fehler beim Erstellen der User Tabelle")
@@ -151,18 +160,24 @@ func initTables() {
 	if err != nil {
 		log.Fatal("Fehler beim Erstellen der Task Tabelle")
 	}
+	_, err = db.Exec(orderTable)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func addUser(name, password string) error {
 	query := `INSERT INTO users (name, password) VALUES (?,?)`
 	_, err := db.Exec(query, name, password)
 	if err != nil {
-		return errors.New("benutzer existiert bereits")
+		fmt.Println(err)
+		return errors.New("Benutzer existiert bereits")
 	}
 	query = `INSERT INTO categories (cat_name, color_header, color_body, user_name) VALUES (?,?,?,?)`
 	_, err = db.Exec(query, "default", "#00a4ba", "#00ceea", name)
 	if err != nil {
-		return errors.New("kategorie default konnte nicht angelegt werden")
+		fmt.Println(err)
+		return errors.New("Kategorie default konnte nicht angelegt werden")
 	}
 	return nil
 }
@@ -185,37 +200,75 @@ func loginUser(inputName, inputPassword string) (token string, name string, task
 			}
 			tasks := loadTasks(name)
 			if tasks == nil {
-				return "", "", nil, nil, errors.New("fehler beim Laden der Tasks")
+				return "", "", nil, nil, errors.New("Fehler beim Laden der Tasks")
 			}
 			categories := loadCategories(name)
 			if categories == nil {
-				return "", "", nil, nil, errors.New("fehler beim Laden der Kategorien")
+				return "", "", nil, nil, errors.New("Fehler beim Laden der Kategorien")
 			}
 			return token, name, tasks, categories, nil
 		}
 	}
 
-	return "", "", nil, nil, errors.New("die Anmeldedaten sind nicht korrekt")
+	return "", "", nil, nil, errors.New("Die Anmeldedaten sind nicht korrekt")
 }
 
-func addTask(name string, title string, desc string, category category) *task {
-	query := `INSERT INTO tasks (title, desc, isDone, category_id, user_name) VALUES (?,?,?,?,?)`
-	newTask, err := db.Exec(query, title, desc, false, category.ID, name)
+func addTask(name string, title string, desc string, category category, order int) *task {
+	taskQuery := `INSERT INTO tasks (title, desc, isDone, category_id, user_name) VALUES (?,?,?,?,?)`
+	orderQuery := `INSERT INTO task_order (user_name, task_id, order_id) VALUES (?,?,?)`
+
+	tx, err := db.Begin()
 	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return nil
+	}
+
+	newTask, err := tx.Exec(taskQuery, title, desc, false, category.ID, name)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
 		return nil
 	}
 	addedTaskId, _ := newTask.LastInsertId()
-	addedTask := NewTask(int(addedTaskId), title, desc, false, category, name, []string{})
+	addedTask := NewTask(int(addedTaskId), title, desc, false, category, name, []string{}, order)
+
+	_, err = tx.Exec(orderQuery, name, addedTaskId, order)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return nil
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return nil
+	}
 
 	return addedTask
 }
 func deleteTask(name string, id int) error {
 	existQuery := `SELECT EXISTS(SELECT 1 FROM sharing WHERE task_id = ?)`
+	sharingQuery := `DELETE FROM sharing WHERE task_id = ?`
 	taskQuery := `DELETE FROM tasks WHERE id = ? AND user_name = ?`
+	removeOrderQuery := `DELETE FROM task_order WHERE task_id = ? AND user_name = ?`
+	getOrderQuery := `SELECT order_id FROM task_order WHERE task_id = ?`
+	updateOrderQuery := `UPDATE task_order SET order_id = order_id - 1 WHERE user_name = ? AND order_id > ?`
 	var exists bool
+	var taskOrder int
 
 	tx, err := db.Begin()
 	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	err = tx.QueryRow(getOrderQuery, id).Scan(&taskOrder)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
 		return err
 	}
 
@@ -229,6 +282,7 @@ func deleteTask(name string, id int) error {
 		targetQuery := `SELECT target_name FROM sharing WHERE task_id = ?`
 		targetRows, err := tx.Query(targetQuery, id)
 		if err != nil {
+			tx.Rollback()
 			fmt.Println(err)
 			return err
 		}
@@ -243,20 +297,40 @@ func deleteTask(name string, id int) error {
 			}
 			message, err := json.Marshal(id)
 			if err != nil {
+				tx.Rollback()
 				fmt.Println(err)
 				return err
 			}
 			mu.Lock()
 			if conn, ok := clients[targetName]; ok {
 				if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+					tx.Rollback()
 					fmt.Println(err)
 					return err
 				}
 			}
 			mu.Unlock()
 		}
+		_, err = tx.Exec(sharingQuery, id)
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+
 	}
 	_, err = tx.Exec(taskQuery, id, name)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	_, err = tx.Exec(removeOrderQuery, id, name)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	_, err = tx.Exec(updateOrderQuery, name, taskOrder)
 	if err != nil {
 		tx.Rollback()
 		return err
@@ -276,36 +350,39 @@ func changeTask(changedTask task, user string) error {
 
 	tx, err := db.Begin()
 	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return err
 	}
 
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
 	if changedTask.Owner == user {
 		changeQuery = `UPDATE tasks SET title = ?, desc = ?, isDone = ?, category_id = ? WHERE id = ? AND user_name = ?`
 		_, err = tx.Exec(changeQuery, changedTask.Title, changedTask.Desc, changedTask.IsDone, changedTask.Category.ID, changedTask.ID, changedTask.Owner)
+		if err != nil {
+			tx.Rollback()
+			fmt.Println(err)
+			return err
+		}
 	} else {
-		fmt.Println("Changing foreign task")
 		changeQuery = `UPDATE tasks SET isDone = ? WHERE id = ?`
 		_, err = tx.Exec(changeQuery, changedTask.IsDone, changedTask.ID)
-	}
-	if err != nil {
-		fmt.Println(err)
-		return err
+		if err != nil {
+			tx.Rollback()
+			fmt.Println(err)
+			return err
+		}
 	}
 
 	err = tx.QueryRow(existQuery, changedTask.ID).Scan(&exists)
 	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return err
 	}
 
 	err = tx.Commit()
 	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return err
 	}
@@ -331,34 +408,38 @@ func changeCategory(name string, id int, cat_name, color_header, color_body stri
 }
 
 func loadTasks(name string) []task {
-	query := `SELECT t.id, t.title, t.desc, t.isDone, t.user_name, c.id AS category_id, c.cat_name, c.color_header, c.color_body 
+	query := `SELECT t.id, t.title, t.desc, t.isDone, t.user_name, c.id AS category_id, c.cat_name, c.color_header, c.color_body, o.order_id 
 	FROM tasks t
 	LEFT JOIN categories c ON t.category_id = c.id
+	LEFT JOIN task_order o ON t.id = o.task_id AND o.user_name = ?
 	WHERE t.user_name = ?
 
 	UNION
 
-	SELECT t.id, t.title, t.desc, t.isDone, t.user_name, c.id AS category_id, c.cat_name, c.color_header, c.color_body 
+	SELECT t.id, t.title, t.desc, t.isDone, t.user_name, c.id AS category_id, c.cat_name, c.color_header, c.color_body, o.order_id 
 	FROM tasks t
 	LEFT JOIN categories c ON t.category_id = c.id
+	LEFT JOIN task_order o ON t.id = o.task_id AND o.user_name = ?
 	INNER JOIN sharing s ON t.id = s.task_id
-	WHERE s.target_name = ?`
+	WHERE s.target_name = ?
+	
+	ORDER BY o.order_id;`
 
-	rows, err := db.Query(query, name, name)
+	rows, err := db.Query(query, name, name, name, name)
 	if err != nil {
 		fmt.Println(err)
 		return nil
 	}
 	defer rows.Close()
 
-	loadedTasks := make([]task, 0)
+	loadedTasks := []task{}
 	for rows.Next() {
 		var shared *[]string
-		var task_id, cat_id int
+		var task_id, cat_id, order int
 		var title, desc, cat_name, color_header, color_body, owner string
 		var isDone bool
 
-		err := rows.Scan(&task_id, &title, &desc, &isDone, &owner, &cat_id, &cat_name, &color_header, &color_body)
+		err := rows.Scan(&task_id, &title, &desc, &isDone, &owner, &cat_id, &cat_name, &color_header, &color_body, &order)
 		if err != nil {
 			fmt.Println(err)
 			return nil
@@ -369,9 +450,9 @@ func loadTasks(name string) []task {
 				fmt.Println(err)
 				return nil
 			}
-			loadedTasks = append(loadedTasks, *NewTask(task_id, title, desc, isDone, *NewCategory(cat_id, cat_name, color_header, color_body), owner, *shared))
+			loadedTasks = append(loadedTasks, *NewTask(task_id, title, desc, isDone, *NewCategory(cat_id, cat_name, color_header, color_body), owner, *shared, order))
 		} else {
-			loadedTasks = append(loadedTasks, *NewTask(task_id, title, desc, isDone, *NewCategory(cat_id, cat_name, color_header, color_body), owner, []string{}))
+			loadedTasks = append(loadedTasks, *NewTask(task_id, title, desc, isDone, *NewCategory(cat_id, cat_name, color_header, color_body), owner, []string{}, order))
 		}
 
 	}
@@ -411,38 +492,67 @@ func loadSharedUsers(taskID int) (*[]string, error) {
 func shareTask(sharedTask task, target string) error {
 	existQuery := `SELECT EXISTS(SELECT 1 FROM users WHERE name = ?)`
 	shareQuery := `INSERT INTO sharing (task_id, target_name) VALUES (?,?)`
+	orderQuery := `INSERT INTO task_order (user_name, task_id, order_id) VALUES (?,?,?)`
+	totalTaskQuery := `SELECT COUNT(*) AS total_tasks
+	FROM (
+		SELECT id
+		FROM tasks
+		WHERE user_name = ?
+
+		UNION
+
+		SELECT t.id
+		FROM tasks t
+		INNER JOIN sharing s ON t.id = s.task_id
+		WHERE s.target_name = ?
+	) AS combined_tasks;`
+
+	var exists bool
+	var totalTasks int
 
 	tx, err := db.Begin()
 	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return err
 	}
 
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
+	err = tx.QueryRow(totalTaskQuery, target, target).Scan(&totalTasks)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
 
-	var exists bool
 	err = tx.QueryRow(existQuery, target).Scan(&exists)
 	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return err
 	}
 
 	if !exists {
-		return errors.New("benutzer konnte nicht gefunden werden")
+		tx.Rollback()
+		return errors.New("Benutzer konnte nicht gefunden werden")
 	}
 
 	_, err = tx.Exec(shareQuery, sharedTask.ID, target)
 	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return errors.New("Task bereits für diesen Benutzer freigegeben")
+	}
+	sharedTask.Order = totalTasks + 1
+	_, err = tx.Exec(orderQuery, target, sharedTask.ID, sharedTask.Order) // Fehler tritt auf!
+	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return err
 	}
 
 	err = tx.Commit()
 	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return err
 	}
@@ -463,9 +573,47 @@ func shareTask(sharedTask task, target string) error {
 }
 
 func removeSharing(id int, target string) error {
-	removeQuery := `DELETE FROM sharing WHERE task_id = ? AND target_name = ?`
-	_, err := db.Exec(removeQuery, id, target)
+	removeShareQuery := `DELETE FROM sharing WHERE task_id = ? AND target_name = ?`
+	getOrderQuery := `SELECT order_id FROM task_order WHERE task_id = ?`
+	removeOrderQuery := `DELETE FROM task_order WHERE task_id = ? AND user_name = ?`
+	updateOrderQuery := `UPDATE task_order SET order_id = order_id - 1 WHERE user_name = ? AND order_id > ?`
+	var taskOrder int
+
+	tx, err := db.Begin()
 	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+
+	err = tx.QueryRow(getOrderQuery, id).Scan(&taskOrder)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+
+	_, err = tx.Exec(removeShareQuery, id, target)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+
+	_, err = tx.Exec(removeOrderQuery, id, target)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	_, err = tx.Exec(updateOrderQuery, target, taskOrder)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return err
 	}
@@ -548,6 +696,7 @@ func deleteCategory(user_name string, id int) ([]task, error) {
 
 	tx, err := db.Begin()
 	if err != nil {
+		tx.Rollback()
 		fmt.Println(err)
 		return nil, err
 	}
@@ -594,6 +743,39 @@ func loadCategories(name string) []category {
 		loadedCategories = append(loadedCategories, *NewCategory(id, cat_name, color_header, color_body))
 	}
 	return loadedCategories
+}
+
+func changeOrder(name string, task_id_up, task_id_down int) error {
+	queryOrderUp := `UPDATE task_order SET order_id = order_id + 1 WHERE user_name = ? AND task_id = ?`
+	queryOrderDown := `UPDATE task_order SET order_id = order_id - 1 WHERE user_name = ? AND task_id = ?`
+
+	tx, err := db.Begin()
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+	_, err = tx.Exec(queryOrderUp, name, task_id_up)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+
+	_, err = tx.Exec(queryOrderDown, name, task_id_down)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+	return nil
 }
 
 func RegisterUser(c *fiber.Ctx) error {
@@ -650,6 +832,7 @@ func AddTask(c *fiber.Ctx) error {
 		Title    string   `json:"title"`
 		Desc     string   `json:"desc"`
 		Category category `json:"category"`
+		Order    int      `json:"order"`
 	}
 
 	var input TaskInput
@@ -658,7 +841,7 @@ func AddTask(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 	}
 	if strings.TrimSpace(input.Title) != "" {
-		addedTask := addTask(name, input.Title, input.Desc, input.Category)
+		addedTask := addTask(name, input.Title, input.Desc, input.Category, input.Order)
 		if addedTask == nil {
 			return c.Status(400).JSON(fiber.Map{"error": "Aufgabe konnte nicht erstellt werden"})
 		}
@@ -703,7 +886,7 @@ func ChangeTask(c *fiber.Ctx) error {
 			fmt.Println(err)
 			return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
 		}
-		err = changeTask(*NewTask(i, input.Title, input.Desc, input.IsDone, input.Category, input.Owner, []string{}), name)
+		err = changeTask(*NewTask(i, input.Title, input.Desc, input.IsDone, input.Category, input.Owner, []string{}, 0), name)
 		if err != nil {
 			fmt.Println(err)
 			return c.Status(400).JSON(fiber.Map{"error": "Aufgabe konnte nicht geändert werden"})
@@ -738,10 +921,10 @@ func ShareTask(c *fiber.Ctx) error {
 			fmt.Println(err)
 			return c.Status(400).JSON(fiber.Map{"error": "Fehler beim Konvertieren von ID"})
 		}
-		err = shareTask(*NewTask(i, input.Title, input.Desc, input.IsDone, input.Category, name, []string{}), target)
+		err = shareTask(*NewTask(i, input.Title, input.Desc, input.IsDone, input.Category, name, []string{}, 0), target)
 		if err != nil {
 			fmt.Println(err)
-			return c.Status(400).JSON(fiber.Map{"error": "Benutzer konnte nicht gefunden werden"})
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 		return c.Status(201).JSON(fiber.Map{"msg": "Task erfolgreich freigegeben"})
 	}
@@ -834,6 +1017,30 @@ func DeleteCategory(c *fiber.Ctx) error {
 	}
 }
 
+func ChangeOrder(c *fiber.Ctx) error {
+	name := c.Locals("name").(string)
+	id_up := c.Params("idUp")
+	id_down := c.Params("idDown")
+
+	up, err := strconv.Atoi(id_up)
+	if err != nil {
+		fmt.Println(err)
+		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+	}
+	down, err := strconv.Atoi(id_down)
+	if err != nil {
+		fmt.Println(err)
+		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+	}
+	err = changeOrder(name, up, down)
+	if err != nil {
+		fmt.Println(err)
+		return c.Status(400).JSON(fiber.Map{"error": "Reihenfolge konnte nicht geändert werden"})
+	}
+	return c.Status(200).JSON(fiber.Map{"msg": "Reihenfolge erfolgreich geändert"})
+
+}
+
 var db *sql.DB
 var clients = make(map[string]*websocket.Conn)
 var mu sync.Mutex
@@ -920,16 +1127,17 @@ func main() {
 	app.Use(jwtMiddleware())
 
 	// Task Routen
-	app.Post("/api/:name/tasks", AddTask)
-	app.Delete("/api/:name/tasks/:id", DeleteTask)
-	app.Patch("/api/:name/tasks/:id", ChangeTask)
-	app.Post("/api/:name/tasks/:id/:target", ShareTask)
-	app.Delete("/api/:name/tasks/:id/:target", RemoveSharing)
+	app.Post("/api/tasks", AddTask)
+	app.Delete("/api/tasks/:id", DeleteTask)
+	app.Patch("/api/tasks/:id", ChangeTask)
+	app.Post("/api/tasks/:id/:target", ShareTask)
+	app.Delete("/api/tasks/:id/:target", RemoveSharing)
+	app.Patch("/api/tasks/:idUp/:idDown", ChangeOrder)
 
 	// Category Routen
-	app.Post("/api/:name/categories", AddCategory)
-	app.Patch("/api/:name/categories/:id/delete", DeleteCategory)
-	app.Patch("/api/:name/categories/:id", ChangeCategory)
+	app.Post("/api/categories", AddCategory)
+	app.Patch("/api/categories/:id/delete", DeleteCategory)
+	app.Patch("/api/categories/:id", ChangeCategory)
 
 	app.Listen(":5000")
 }
