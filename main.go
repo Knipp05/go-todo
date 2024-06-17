@@ -745,6 +745,39 @@ func loadCategories(name string) []category {
 	return loadedCategories
 }
 
+func changeOrder(name string, task_id_up, task_id_down int) error {
+	queryOrderUp := `UPDATE task_order SET order_id = order_id + 1 WHERE user_name = ? AND task_id = ?`
+	queryOrderDown := `UPDATE task_order SET order_id = order_id - 1 WHERE user_name = ? AND task_id = ?`
+
+	tx, err := db.Begin()
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+	_, err = tx.Exec(queryOrderUp, name, task_id_up)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+
+	_, err = tx.Exec(queryOrderDown, name, task_id_down)
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		fmt.Println(err)
+		return err
+	}
+	return nil
+}
+
 func RegisterUser(c *fiber.Ctx) error {
 	type Credentials struct {
 		Name     string `json:"name"`
@@ -984,6 +1017,30 @@ func DeleteCategory(c *fiber.Ctx) error {
 	}
 }
 
+func ChangeOrder(c *fiber.Ctx) error {
+	name := c.Locals("name").(string)
+	id_up := c.Params("idUp")
+	id_down := c.Params("idDown")
+
+	up, err := strconv.Atoi(id_up)
+	if err != nil {
+		fmt.Println(err)
+		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+	}
+	down, err := strconv.Atoi(id_down)
+	if err != nil {
+		fmt.Println(err)
+		return c.Status(400).JSON(fiber.Map{"error": "Ungültige Eingabedaten"})
+	}
+	err = changeOrder(name, up, down)
+	if err != nil {
+		fmt.Println(err)
+		return c.Status(400).JSON(fiber.Map{"error": "Reihenfolge konnte nicht geändert werden"})
+	}
+	return c.Status(200).JSON(fiber.Map{"msg": "Reihenfolge erfolgreich geändert"})
+
+}
+
 var db *sql.DB
 var clients = make(map[string]*websocket.Conn)
 var mu sync.Mutex
@@ -1070,16 +1127,17 @@ func main() {
 	app.Use(jwtMiddleware())
 
 	// Task Routen
-	app.Post("/api/:name/tasks", AddTask)
-	app.Delete("/api/:name/tasks/:id", DeleteTask)
-	app.Patch("/api/:name/tasks/:id", ChangeTask)
-	app.Post("/api/:name/tasks/:id/:target", ShareTask)
-	app.Delete("/api/:name/tasks/:id/:target", RemoveSharing)
+	app.Post("/api/tasks", AddTask)
+	app.Delete("/api/tasks/:id", DeleteTask)
+	app.Patch("/api/tasks/:id", ChangeTask)
+	app.Post("/api/tasks/:id/:target", ShareTask)
+	app.Delete("/api/tasks/:id/:target", RemoveSharing)
+	app.Patch("/api/tasks/:idUp/:idDown", ChangeOrder)
 
 	// Category Routen
-	app.Post("/api/:name/categories", AddCategory)
-	app.Patch("/api/:name/categories/:id/delete", DeleteCategory)
-	app.Patch("/api/:name/categories/:id", ChangeCategory)
+	app.Post("/api/categories", AddCategory)
+	app.Patch("/api/categories/:id/delete", DeleteCategory)
+	app.Patch("/api/categories/:id", ChangeCategory)
 
 	app.Listen(":5000")
 }

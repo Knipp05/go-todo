@@ -11,7 +11,6 @@ export type Task = {
   category: Category;
   owner: string;
   shared: string[];
-  order: number;
 };
 export type User = {
   name: string;

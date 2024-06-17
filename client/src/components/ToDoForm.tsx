@@ -22,7 +22,7 @@ export default function ToDoForm(props: any) {
     isDone: false,
     owner: props.user.name,
     shared: [""],
-    order: props.user.tasks.length + 1,
+    order: props.user.tasks.length,
     category: {
       id: 1,
       cat_name: "default",
@@ -40,7 +40,7 @@ export default function ToDoForm(props: any) {
         isDone: props.data.isDone,
         owner: props.data.owner,
         shared: props.data.shared,
-        order: props.data.order,
+        order: props.taskOrder,
         category: props.data.category,
       });
     } else if (props.type === "create") {
@@ -50,7 +50,7 @@ export default function ToDoForm(props: any) {
         isDone: false,
         owner: props.user.name,
         shared: [""],
-        order: props.user.tasks.length + 1,
+        order: props.user.tasks.length,
         category: {
           id: 1,
           cat_name: "default",
@@ -80,7 +80,7 @@ export default function ToDoForm(props: any) {
       isDone: false,
       owner: props.user.name,
       shared: [""],
-      order: props.user.tasks.length + 1,
+      order: props.user.tasks.length,
       category: {
         id: 1,
         cat_name: "default",
@@ -126,9 +126,7 @@ export default function ToDoForm(props: any) {
   const changeTask = async () => {
     const token = sessionStorage.getItem("token");
     const target =
-      props.type === "create"
-        ? `/${props.user.name}/tasks`
-        : `/${props.user.name}/tasks/${props.data.id}`;
+      props.type === "create" ? `/tasks` : `/tasks/${props.data.id}`;
     const method = props.type === "create" ? "POST" : "PATCH";
     if (token && taskContent.title.trim() !== "") {
       try {
@@ -189,7 +187,7 @@ export default function ToDoForm(props: any) {
     if (token && targetName.trim() !== "") {
       try {
         const res = await fetch(
-          BASE_URL + `/${props.user.name}/tasks/${props.data.id}/${targetName}`,
+          BASE_URL + `/tasks/${props.data.id}/${targetName}`,
           {
             method: "POST",
             headers: {
@@ -236,7 +234,7 @@ export default function ToDoForm(props: any) {
     if (token) {
       try {
         const res = await fetch(
-          BASE_URL + `/${props.user.name}/tasks/${props.data.id}/${target}`,
+          BASE_URL + `/tasks/${props.data.id}/${target}`,
           {
             method: "DELETE",
             headers: {
@@ -365,7 +363,7 @@ export default function ToDoForm(props: any) {
             open={open}
             handleClose={handleDropDownClose}
             anchorEl={anchorEl}
-            categories={props.categories}
+            categories={props.user.categories}
             user={props.user}
             setUser={props.setUser}
             setTaskContent={setTaskContent}

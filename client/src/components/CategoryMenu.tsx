@@ -53,9 +53,7 @@ export default function CategoryMenu(props: any) {
       category.cat_name.trim() !== ""
     ) {
       const path =
-        dialogType === "create"
-          ? `/${props.user.name}/categories`
-          : `/${props.user.name}/categories/${category.id}`;
+        dialogType === "create" ? `/categories` : `/categories/${category.id}`;
       const method = dialogType === "create" ? "POST" : "PATCH";
       try {
         const res = await fetch(BASE_URL + path, {
@@ -143,16 +141,13 @@ export default function CategoryMenu(props: any) {
     const token = sessionStorage.getItem("token");
     if (token) {
       try {
-        const res = await fetch(
-          BASE_URL + `/${props.user.name}/categories/${id}/delete`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const res = await fetch(BASE_URL + `/categories/${id}/delete`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         const data = await res.json();
         if (!res.ok) {
